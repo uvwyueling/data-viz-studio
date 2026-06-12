@@ -16,3 +16,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# 本地开发记录文档（不进仓库）
+CHANGELOG.md
+TODO.md

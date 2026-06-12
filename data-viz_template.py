@@ -1,5 +1,5 @@
 """
-data-viz-studio · 种子模板 (v0.3)
+data-viz-studio · 种子模板 (v0.4)
 ==================================
 单一职责：读取用户上传的 CSV/Excel → 输出能回答【数据问题】、并向【特定技术画像受众】、
 在【特定使用场合】下以最低沟通成本传达洞察的可视化图。
@@ -282,6 +282,71 @@ def bar_means_comparison(df, group_col, value_col, *, insight, descriptive,
     return _fig_to_svg(fig)
 
 
+def _looks_like_rate(s):
+    """value 列是不是 0/1 比例数据？是的话该走 rate_comparison，而不是 box/bar_means。"""
+    u = set(pd.unique(s.dropna()))
+    return 0 < len(u) <= 2 and u.issubset({0, 1, True, False})
+
+
+def _wilson_ci(p, n, z=1.96):
+    """Wilson 95% 置信区间（向量化）。关键：结果恒落在 [0,1] 内，
+    不会像 ±std 那样把比例的误差棒画到负数或超过 100%。"""
+    p = np.asarray(p, float); n = np.asarray(n, float)
+    denom = 1 + z**2 / n
+    center = (p + z**2 / (2 * n)) / denom
+    half = (z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / denom
+    return np.clip(center - half, 0, 1), np.clip(center + half, 0, 1)
+
+
+def _annotate_rate(ax, rates, labels, emphasize, level, palette):
+    """比率图的注释：用「百分点」说话，而不是 0.xx。"""
+    if level <= 0 or emphasize is None or emphasize not in labels:
+        return
+    gap_pp = (max(rates) - dict(zip(labels, rates))[emphasize]) * 100
+    if gap_pp < 1:   # 被强调的恰好是最高组，没有"低多少"可说
+        return
+    ax.annotate(f"↓ {emphasize} 比最高组低约 {gap_pp:.0f} 个百分点",
+                xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
+                color=palette["highlight"], fontsize=12, fontweight="bold")
+
+
+def rate_comparison(df, group_col, value_col, *, insight, descriptive,
+                    palette, audience_prof, level, emphasize, show_ci=False):
+    """比率图：专给「分类 × 0/1 比例」用（生还率、转化率、合格率…）。
+    柱高 = 比例(%)，**绝不画 ±std**——0/1 变量 std≈0.5，误差棒会冲出 [0,100%] 把人教错。
+    show_ci=True 时改画 Wilson 95% 置信区间（恒在 [0,1] 内），给技术受众看不确定性。
+    """
+    from matplotlib.ticker import PercentFormatter
+    agg = df.groupby(group_col)[value_col].agg(["mean", "count"])
+    labels = list(agg.index)
+    rates, ns = agg["mean"].values, agg["count"].values
+    colors = [palette["highlight"] if (emphasize is not None and lab == emphasize)
+              else palette["muted"] for lab in labels]
+
+    yerr = None
+    label_y = rates                       # 默认：标签贴柱顶
+    if show_ci:
+        lo, hi = _wilson_ci(rates, ns)
+        yerr = np.vstack([np.clip(rates - lo, 0, None), np.clip(hi - rates, 0, None)])
+        label_y = hi                      # 有误差棒时把标签抬到 CI 上端之上，避开横帽
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.bar(labels, rates, width=0.55, color=colors, edgecolor="none",
+           yerr=yerr, capsize=6 if show_ci else 0, error_kw=dict(ecolor=palette["ink"], lw=1))
+    for i, r in enumerate(rates):  # 直接标百分比——受众不用读坐标轴；锚点避开误差棒
+        ax.annotate(f"{r:.0%}", xy=(i, label_y[i]), xytext=(0, 6), textcoords="offset points",
+                    ha="center", color=palette["ink"], fontsize=11, fontweight="bold")
+    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1))
+    # 默认给足 0~100% 的整轴（比例本就是"占多少"，不截断更诚实）；比例都很小才放大看
+    top = 1.0 if rates.max() >= 0.25 else min(1.0, float(rates.max()) * 1.8)
+    ax.set_ylim(0, top)
+    ax.set_ylabel(f"{value_col}（占比）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    _title(ax, audience_prof, insight, descriptive, palette)
+    _annotate_rate(ax, rates, labels, emphasize, level, palette)
+    return _fig_to_svg(fig)
+
+
 # ── HTML 外壳：把 SVG 内嵌成一个自包含页面 ──────────────────────
 def render_html(title, meta, primary_svg, alt_items, save_to):
     """alt_items: [(说明, svg), ...]。生成一个不依赖任何外部资源的 .html。"""
@@ -331,8 +396,14 @@ def visualize(df, group_col, value_col, *, question, insight,
     common = dict(insight=insight, descriptive=descriptive, palette=palette,
                   audience_prof=aud, level=level, emphasize=emphasize)
 
-    # 受众驱动图型：低画像降级为均值条，否则用箱线图
-    if aud["downgrade"]:
+    # 先看数据类型：0/1 比例数据 → 比率图（box/bar_means 对比例都是错的）
+    if _looks_like_rate(df[value_col]):
+        tech = not aud["downgrade"]   # 技术受众默认带 95% 置信区间，低受众用纯比例条
+        primary_svg = rate_comparison(df, group_col, value_col, **common, show_ci=tech)
+        alt_label = "高管视角 · 纯比例条" if tech else "技术受众视角 · 含 95% 置信区间"
+        alt_items = [(alt_label, rate_comparison(df, group_col, value_col, **common, show_ci=not tech))]
+    # 否则按受众驱动图型：低画像降级为均值条，否则用箱线图
+    elif aud["downgrade"]:
         primary_svg = bar_means_comparison(df, group_col, value_col, **common)
         alt_items = [("技术受众视角 · 箱线图", box_comparison(df, group_col, value_col, **common))]
     else:
