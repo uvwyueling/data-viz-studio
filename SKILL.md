@@ -81,14 +81,19 @@ df = load_dataframe(<上传文件路径>)        # 支持 .csv / .xlsx / .xls / 
 调用 data-viz_template.py 的 visualize(df, group_col, value_col,
     question=…, insight=<第2步EDA得到的洞察>,
     audience=<high/mid/low>, occasion=<journal/keynote/internal/portfolio>,
-    emphasize=<要强调的组>, save_to="output.html")
+    emphasize=<要强调的组>,
+    hue_col=<可选：要对比的子总体列，如 survived；给了就出"分组对比图">,
+    emphasize_hue=<可选：高亮哪个子总体，如 "幸存">,
+    save_to="output.html")
 → 返回一个自包含 HTML（含主图 + 候选视角）。这层只渲染，不做判断。
+→ value 列若是 0/1 比例会自动走比率图；给了 hue_col 则走两/多子总体跨类别对比。
 ```
 
 ## 自检列表
 ### P0（对错）:
-1. 中文字是否已妥善渲染？网页字体 / CSS 里的 CJK font-family 有没有加载到？
-2. 检查图表类型是否适配数据类型
+1. **图表回答的是不是用户原话里的那个问题？** 比较的对象 / 分组 / 子总体 / 度量 / 口径，必须和用户说的逐字对应。严禁把用户要的 A vs B 擅自换成别的（例：把"全体 vs 幸存"换成"幸存 vs 遇难"、把子集换成补集、把"分布"换成"均值"）；图例 / 注释 / 标题用词也要忠实用户的措辞。若用户的框架对当前图型不顺手（如两个子总体有重叠），**回去问用户、不要静默替换**。
+2. 中文字是否已妥善渲染？网页字体 / CSS 里的 CJK font-family 有没有加载到？
+3. 检查图表类型是否适配数据类型
 
 ### P1（易读性）:
 1. 标签/数字有没有和任何图表结构重叠？（柱体、误差棒、网格线、坐标轴、相邻标签都算）——重叠就移动锚点或缩小字号。

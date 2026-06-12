@@ -1,5 +1,5 @@
 """
-data-viz-studio · 种子模板 (v0.4)
+data-viz-studio · 种子模板 (v0.5)
 ==================================
 单一职责：读取用户上传的 CSV/Excel → 输出能回答【数据问题】、并向【特定技术画像受众】、
 在【特定使用场合】下以最低沟通成本传达洞察的可视化图。
@@ -269,11 +269,12 @@ def bar_means_comparison(df, group_col, value_col, *, insight, descriptive,
     means, stds = agg["mean"].values, agg["std"].values
     colors = [palette["highlight"] if (emphasize is not None and lab == emphasize)
               else palette["muted"] for lab in labels]
+    tops = means + np.nan_to_num(stds)   # 标签锚到误差棒上端之上，避免压住横帽（自检 P1）
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.bar(labels, means, width=0.55, color=colors, edgecolor="none",
            yerr=stds, capsize=6, error_kw=dict(ecolor=palette["ink"], lw=1))
-    for i, m in enumerate(means):  # 均值直接标在柱顶——低画像受众不用读坐标轴
-        ax.annotate(f"{m:.2f}", xy=(i, m), xytext=(0, 6), textcoords="offset points",
+    for i, m in enumerate(means):  # 均值直接标出——低画像受众不用读坐标轴
+        ax.annotate(f"{m:.2f}", xy=(i, tops[i]), xytext=(0, 6), textcoords="offset points",
                     ha="center", color=palette["ink"], fontsize=11, fontweight="bold")
     _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
     ax.set_ylabel(f"{value_col}（均值 ± 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
@@ -347,6 +348,87 @@ def rate_comparison(df, group_col, value_col, *, insight, descriptive,
     return _fig_to_svg(fig)
 
 
+# ── 分组对比图元：两/多子总体跨类别对比（hue_col 把每个类别再切几条）────
+def _series_colors(palette, hues, emphasize_hue):
+    """给每个 hue 系列定色：被强调的系列用 highlight，其余用 muted（中性灰）。
+    没指定强调时，默认强调排序后的最后一个系列——让"对照 → 重点"有个落点。"""
+    if emphasize_hue is None and hues:
+        emphasize_hue = hues[-1]
+    return {h: (palette["highlight"] if h == emphasize_hue else palette["muted"]) for h in hues}
+
+
+def _grouped_positions(n_groups, hi, n_h, width):
+    """第 hi 个 hue 系列、在 n_groups 个类别下的并排 x 坐标。"""
+    offset = (hi - (n_h - 1) / 2) * width
+    return [gi + offset for gi in range(n_groups)]
+
+
+def grouped_box_comparison(df, group_col, value_col, hue_col, *, insight, descriptive,
+                           palette, audience_prof, level, emphasize=None, emphasize_hue=None):
+    """分组箱线图：x=group_col 的每个类别下，按 hue_col 并排多个箱体。
+    用于"两/多子总体跨类别对比"，如 各舱位 × 生还与否 的年龄分布。"""
+    from matplotlib.patches import Patch
+    groups = sorted(df[group_col].dropna().unique())
+    hues = sorted(df[hue_col].dropna().unique())
+    colors = _series_colors(palette, hues, emphasize_hue)
+    n_h = len(hues); width = 0.8 / max(1, n_h)
+
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    for hi, hue in enumerate(hues):
+        positions = _grouped_positions(len(groups), hi, n_h, width)
+        data = [df[(df[group_col] == g) & (df[hue_col] == hue)][value_col].dropna().values
+                for g in groups]
+        bp = ax.boxplot(data, positions=positions, widths=width * 0.9, patch_artist=True,
+                        medianprops=dict(color=palette["ink"], linewidth=1.5),
+                        whiskerprops=dict(color=palette["ink"]),
+                        capprops=dict(color=palette["ink"]),
+                        flierprops=dict(marker="o", markersize=3,
+                                        markerfacecolor=palette["muted"], markeredgecolor="none"))
+        for patch in bp["boxes"]:
+            patch.set_facecolor(colors[hue]); patch.set_edgecolor("none")
+
+    ax.set_xticks(range(len(groups))); ax.set_xticklabels(groups)
+    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
+    ax.set_ylabel(value_col, color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
+              title=hue_col, frameon=False, loc="best")
+    _title(ax, audience_prof, insight, descriptive, palette)
+    return _fig_to_svg(fig)
+
+
+def grouped_bar_means_comparison(df, group_col, value_col, hue_col, *, insight, descriptive,
+                                 palette, audience_prof, level, emphasize=None, emphasize_hue=None):
+    """分组均值条：分组箱线图给低受众的"降级翻译"。每类别下按 hue 并排柱，柱高=均值、误差棒=std。"""
+    from matplotlib.patches import Patch
+    groups = sorted(df[group_col].dropna().unique())
+    hues = sorted(df[hue_col].dropna().unique())
+    colors = _series_colors(palette, hues, emphasize_hue)
+    n_h = len(hues); width = 0.8 / max(1, n_h)
+
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    for hi, hue in enumerate(hues):
+        positions = _grouped_positions(len(groups), hi, n_h, width)
+        sub = df[df[hue_col] == hue].groupby(group_col)[value_col]
+        means = [sub.mean().get(g, np.nan) for g in groups]
+        stds = [sub.std().get(g, np.nan) for g in groups]
+        ax.bar(positions, means, width=width * 0.9, color=colors[hue], edgecolor="none",
+               yerr=stds, capsize=4, error_kw=dict(ecolor=palette["ink"], lw=1))
+        if level >= 1:  # 低受众：均值直接标出，锚到误差棒上端之上（自检 P1）
+            for x, mv, sv in zip(positions, means, stds):
+                if mv == mv:  # 跳过 NaN
+                    top = mv + (sv if sv == sv else 0)
+                    ax.annotate(f"{mv:.0f}", xy=(x, top), xytext=(0, 4), textcoords="offset points",
+                                ha="center", color=palette["ink"], fontsize=9, fontweight="bold")
+
+    ax.set_xticks(range(len(groups))); ax.set_xticklabels(groups)
+    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
+    ax.set_ylabel(f"{value_col}（均值 ± 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
+              title=hue_col, frameon=False, loc="best")
+    _title(ax, audience_prof, insight, descriptive, palette)
+    return _fig_to_svg(fig)
+
+
 # ── HTML 外壳：把 SVG 内嵌成一个自包含页面 ──────────────────────
 def render_html(title, meta, primary_svg, alt_items, save_to):
     """alt_items: [(说明, svg), ...]。生成一个不依赖任何外部资源的 .html。"""
@@ -386,18 +468,31 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
 
 # ── orchestrator：一张最优 + 1~2 张候选视角，输出单个 HTML ────────
 def visualize(df, group_col, value_col, *, question, insight,
-              audience, occasion, emphasize=None, save_to="chart.html"):
+              audience, occasion, emphasize=None, hue_col=None, emphasize_hue=None,
+              save_to="chart.html"):
     occ = OCCASION_PROFILES[occasion]
     aud = AUDIENCE_PROFILES[audience]
     palette = occ["palette"]
     level = max(0, min(ANNOTATE_MAX, occ["annotate_base"] + aud["annotate_bump"]))  # ← 你定的组合规则
-    descriptive = f"各{group_col}的{value_col}对比"
+    descriptive = (f"各{group_col} × {hue_col} 的{value_col}分布" if hue_col
+                   else f"各{group_col}的{value_col}对比")
 
     common = dict(insight=insight, descriptive=descriptive, palette=palette,
                   audience_prof=aud, level=level, emphasize=emphasize)
 
-    # 先看数据类型：0/1 比例数据 → 比率图（box/bar_means 对比例都是错的）
-    if _looks_like_rate(df[value_col]):
+    # 给了 hue_col → 两/多子总体跨类别对比（分组箱线 / 低受众降级为分组均值条）
+    if hue_col is not None:
+        gcommon = dict(common, emphasize_hue=emphasize_hue)
+        if aud["downgrade"]:
+            primary_svg = grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon)
+            alt_items = [("技术受众视角 · 分组箱线",
+                          grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon))]
+        else:
+            primary_svg = grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon)
+            alt_items = [("高管视角 · 分组均值条",
+                          grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon))]
+    # 否则看数据类型：0/1 比例数据 → 比率图（box/bar_means 对比例都是错的）
+    elif _looks_like_rate(df[value_col]):
         tech = not aud["downgrade"]   # 技术受众默认带 95% 置信区间，低受众用纯比例条
         primary_svg = rate_comparison(df, group_col, value_col, **common, show_ci=tech)
         alt_label = "高管视角 · 纯比例条" if tech else "技术受众视角 · 含 95% 置信区间"
