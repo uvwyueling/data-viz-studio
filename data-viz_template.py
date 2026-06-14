@@ -227,7 +227,7 @@ AUDIENCE_PROFILES = {
 # ── 2.5 注释地板：受众档的固有属性（单一真源）──────────────────────
 # 把"中受众遇箱线类要补一句解读"做成 (audience, chart_kind) 查表，而非复制进每个图型函数（DRY）。
 # _BORDERLINE_FOR_MID：哪些图型对「中」受众算"临界/要翻译"——这条属性也是 references 图型目录该登记的字段。
-_BORDERLINE_FOR_MID = {"box", "grouped_box"}
+_BORDERLINE_FOR_MID = {"box", "grouped_box", "facet_box", "scatter", "heatmap"}
 
 
 def _annotation_floor(audience, chart_kind):
@@ -245,11 +245,14 @@ def _annotation_floor(audience, chart_kind):
     return 0
 
 
-def _route(df, group_col, value_col, aud, hue_col):
+def _route(df, group_col, value_col, aud, hue_col, facet_col=None):
     """选型路由（单一真源）：按数据形状 + 受众，定这次画哪种图，返回 chart_kind。
-    注释地板(_annotation_floor)与 visualize 的分发都依赖它。"""
+    注释地板(_annotation_floor)与 visualize 的分发都依赖它。
+    scatter / heatmap 需手传 chart_kind 覆盖（无法从数据形状自动判断）。"""
     if group_col is None:                                          # 单变量模式（直方图 / 大数字KPI）
         return "kpi" if aud["downgrade"] else "histogram"
+    if facet_col is not None:                                      # 小多图（facet_col → 一图一面板）
+        return "facet_bar_means" if aud["downgrade"] else "facet_box"
     if hue_col is not None:
         return "grouped_bar_means" if aud["downgrade"] else "grouped_box"
     if _looks_like_rate(df[value_col]):
@@ -276,9 +279,11 @@ _GROUP_WARN = 8    # group_col 超过这个数量发出警告
 _HUE_WARN   = 4   # hue_col 超过这个数量发出警告
 
 
-def _check_cardinality(df, group_col, hue_col):
+def _check_cardinality(df, group_col, hue_col, facet_col=None):
     """类别过多时提前告知，避免出一张谁也看不清的图。不抛错——只打印提示，让调用方决定是否截断。"""
-    if group_col is not None and not pd.api.types.is_datetime64_any_dtype(df[group_col]):
+    if (group_col is not None
+            and not pd.api.types.is_datetime64_any_dtype(df[group_col])
+            and not pd.api.types.is_numeric_dtype(df[group_col])):
         n_groups = df[group_col].nunique()
         if n_groups > _GROUP_WARN:
             print(
@@ -290,7 +295,14 @@ def _check_cardinality(df, group_col, hue_col):
         if n_hues > _HUE_WARN:
             print(
                 f"[data-viz-studio] 警告：hue_col='{hue_col}' 有 {n_hues} 个系列（建议 ≤{_HUE_WARN}）。"
-                f" 超过 {_HUE_WARN} 个系列时分组图会过于拥挤，考虑改用分面（small multiples）。"
+                f" 超过 {_HUE_WARN} 个系列时分组图会过于拥挤，考虑改用分面（small multiples / facet_col）。"
+            )
+    if facet_col is not None:
+        n_facets = df[facet_col].nunique()
+        if n_facets > _GROUP_WARN:
+            print(
+                f"[data-viz-studio] 警告：facet_col='{facet_col}' 有 {n_facets} 个面板（建议 ≤{_GROUP_WARN}）。"
+                f" 面板太多时小多图会变得很小，考虑筛选后再出图。"
             )
 
 
@@ -665,6 +677,194 @@ def kpi_number(df, value_col, *, insight, descriptive,
     return _fig_to_svg(fig)
 
 
+# ── 分面（small multiples）、相关图、热力图（v0.8 续）────────────────
+
+def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descriptive,
+                         palette, audience_prof, level, emphasize=None):
+    """小多图（箱线）：每个 facet_col 值独立一个子图，子图内按 group_col 分组画箱线。
+    sharey=True 确保跨面板 y 轴可比；level >= 1 时图底补一句结论。"""
+    facets = sorted(df[facet_col].dropna().unique())
+    n_f = len(facets)
+    ncols = min(3, n_f)
+    nrows = (n_f + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.8 * nrows),
+                             sharey=True, squeeze=False)
+    axes_flat = axes.flatten()
+
+    for i, facet in enumerate(facets):
+        ax = axes_flat[i]
+        sub = df[df[facet_col] == facet]
+        grouped = [(g, v.dropna().values) for g, v in sub.groupby(group_col)[value_col]]
+        labels, data = zip(*grouped) if grouped else ([], [])
+        bp = ax.boxplot(list(data), tick_labels=list(labels), patch_artist=True, widths=0.5,
+                        medianprops=dict(color=palette["ink"], linewidth=1.5),
+                        whiskerprops=dict(color=palette["ink"]),
+                        capprops=dict(color=palette["ink"]),
+                        flierprops=dict(marker="o", markersize=3,
+                                        markerfacecolor=palette["muted"], markeredgecolor="none"))
+        for patch, lab in zip(bp["boxes"], labels):
+            emph = (emphasize is not None and lab == emphasize)
+            patch.set_facecolor(palette["highlight"] if emph else palette["muted"])
+            patch.set_edgecolor("none")
+        ax.set_title(f"{facet_col} = {facet}", fontsize=11, color=palette["ink"], pad=6)
+        _despine(ax, palette)
+        ax.yaxis.grid(True, color=palette["grid"])
+        ax.set_axisbelow(True)
+        ax.set_ylabel(value_col if i % ncols == 0 else "", color=palette["ink"])
+        ax.tick_params(colors=palette["ink"])
+
+    for j in range(i + 1, len(axes_flat)):
+        axes_flat[j].set_visible(False)
+
+    title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
+    fig.suptitle(title_text, color=palette["ink"], fontsize=14, fontweight="bold")
+    if level >= 1:
+        fig.text(0.5, 0.01, insight, ha="center", fontsize=11,
+                 color=palette["highlight"], fontweight="bold")
+    fig.tight_layout()
+    return _fig_to_svg(fig)
+
+
+def facet_bar_means_comparison(df, group_col, value_col, facet_col, *, insight, descriptive,
+                               palette, audience_prof, level, emphasize=None):
+    """小多图（均值条）：分面箱线对低受众的降级版。每面板内均值柱 + std 误差棒 + 直接标值。"""
+    facets = sorted(df[facet_col].dropna().unique())
+    n_f = len(facets)
+    ncols = min(3, n_f)
+    nrows = (n_f + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.8 * nrows),
+                             sharey=True, squeeze=False)
+    axes_flat = axes.flatten()
+
+    for i, facet in enumerate(facets):
+        ax = axes_flat[i]
+        sub = df[df[facet_col] == facet]
+        agg = sub.groupby(group_col)[value_col].agg(["mean", "std"])
+        labels = list(agg.index)
+        means, stds = agg["mean"].values, agg["std"].values
+        colors = [palette["highlight"] if (emphasize is not None and lab == emphasize)
+                  else palette["muted"] for lab in labels]
+        tops = means + np.nan_to_num(stds)
+        ax.bar(labels, means, color=colors, edgecolor="none", width=0.55,
+               yerr=stds, capsize=5, error_kw=dict(ecolor=palette["ink"], lw=1))
+        for xi, mv, top in zip(range(len(labels)), means, tops):
+            ax.annotate(f"{mv:.1f}", xy=(xi, top), xytext=(0, 5),
+                        textcoords="offset points", ha="center",
+                        color=palette["ink"], fontsize=9, fontweight="bold")
+        ax.set_title(f"{facet_col} = {facet}", fontsize=11, color=palette["ink"], pad=6)
+        _despine(ax, palette)
+        ax.yaxis.grid(True, color=palette["grid"])
+        ax.set_axisbelow(True)
+        ax.set_ylabel(value_col if i % ncols == 0 else "", color=palette["ink"])
+        ax.tick_params(colors=palette["ink"])
+
+    for j in range(i + 1, len(axes_flat)):
+        axes_flat[j].set_visible(False)
+
+    title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
+    fig.suptitle(title_text, color=palette["ink"], fontsize=14, fontweight="bold")
+    if level >= 1:
+        fig.text(0.5, 0.01, insight, ha="center", fontsize=11,
+                 color=palette["highlight"], fontweight="bold")
+    fig.tight_layout()
+    return _fig_to_svg(fig)
+
+
+def _draw_regression(ax, x, y, color, level, row_offset=0):
+    """画回归线；level >= 1 时标注 R² 和方向（row_offset 用于多系列避免标注重叠）。"""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    x, y = x[mask], y[mask]
+    if len(x) < 2:
+        return
+    m, b = np.polyfit(x, y, 1)
+    x_plot = np.array([x.min(), x.max()])
+    ax.plot(x_plot, m * x_plot + b, color=color, linewidth=1.8, linestyle="--", alpha=0.8)
+    if level >= 1:
+        y_pred = m * x + b
+        ss_res = ((y - y_pred) ** 2).sum()
+        ss_tot = ((y - y.mean()) ** 2).sum()
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+        direction = "正相关" if m > 0 else "负相关"
+        ax.annotate(f"{direction}，R²={r2:.2f}",
+                    xy=(0.04, 0.93 - row_offset * 0.09), xycoords="axes fraction",
+                    color=color, fontsize=10, fontweight="bold")
+
+
+def scatter_regression(df, x_col, y_col, *, insight, descriptive,
+                       palette, audience_prof, level, emphasize=None, hue_col=None):
+    """散点图 + 线性回归线：探索两个连续变量的关系。
+    hue_col 给了则分颜色显示各子总体并分别画回归线。
+    调用方式：visualize(df, x_col, y_col, chart_kind='scatter', ...)。"""
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    if hue_col is not None:
+        hues = sorted(df[hue_col].dropna().unique())
+        colors = _series_colors(palette, hues, emphasize)
+        for offset, hue in enumerate(hues):
+            sub = df[df[hue_col] == hue][[x_col, y_col]].dropna()
+            ax.scatter(sub[x_col], sub[y_col], c=colors[hue],
+                       alpha=0.55, s=28, edgecolors="none", label=str(hue))
+            _draw_regression(ax, sub[x_col], sub[y_col], colors[hue], level, offset)
+        ax.legend(title=hue_col, frameon=False)
+    else:
+        clean = df[[x_col, y_col]].dropna()
+        ax.scatter(clean[x_col], clean[y_col], c=palette["highlight"],
+                   alpha=0.55, s=28, edgecolors="none")
+        _draw_regression(ax, clean[x_col], clean[y_col], palette["highlight"], level)
+
+    _despine(ax, palette)
+    ax.yaxis.grid(True, color=palette["grid"])
+    ax.xaxis.grid(True, color=palette["grid"])
+    ax.set_axisbelow(True)
+    ax.set_xlabel(x_col, color=palette["ink"])
+    ax.set_ylabel(y_col, color=palette["ink"])
+    ax.tick_params(colors=palette["ink"])
+    _title(ax, audience_prof, insight, descriptive, palette)
+    return _fig_to_svg(fig)
+
+
+def heatmap_comparison(df, row_col, col_col, value_col, *, insight, descriptive,
+                       palette, audience_prof, level, emphasize=None):
+    """热力图：row_col × col_col 交叉均值，颜色深浅 = value_col 均值，格子内始终标数值。
+    调用方式：visualize(df, group_col=row_col, hue_col=col_col, value_col=…, chart_kind='heatmap', …)。"""
+    from matplotlib.colors import LinearSegmentedColormap
+    pivot = df.groupby([row_col, col_col])[value_col].mean().unstack(col_col)
+    n_rows, n_cols = pivot.shape
+    fig, ax = plt.subplots(figsize=(max(5, n_cols * 1.5), max(4, n_rows * 0.9)))
+
+    cmap = LinearSegmentedColormap.from_list("em", ["#f0f4f8", palette["highlight"]])
+    im = ax.imshow(pivot.values, cmap=cmap, aspect="auto")
+
+    ax.set_xticks(range(n_cols)); ax.set_xticklabels(pivot.columns, rotation=30, ha="right",
+                                                       color=palette["ink"])
+    ax.set_yticks(range(n_rows)); ax.set_yticklabels(pivot.index, color=palette["ink"])
+    ax.set_xlabel(col_col, color=palette["ink"])
+    ax.set_ylabel(row_col, color=palette["ink"])
+    ax.tick_params(colors=palette["ink"])
+
+    vmax = np.nanmax(pivot.values)
+    for i in range(n_rows):
+        for j in range(n_cols):
+            val = pivot.iloc[i, j]
+            if not pd.isna(val):
+                text_color = "white" if (vmax > 0 and val / vmax > 0.55) else palette["ink"]
+                ax.text(j, i, f"{val:.1f}", ha="center", va="center",
+                        color=text_color, fontsize=10, fontweight="bold")
+
+    cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+    cbar.ax.tick_params(colors=palette["ink"], labelsize=9)
+    cbar.set_label(value_col, color=palette["ink"], fontsize=10)
+
+    if level >= 1 and insight:
+        ax.annotate(insight, xy=(0.5, -0.2), xycoords="axes fraction", ha="center",
+                    color=palette["highlight"], fontsize=11, fontweight="bold")
+
+    _title(ax, audience_prof, insight, descriptive, palette)
+    fig.tight_layout()
+    return _fig_to_svg(fig)
+
+
 # ── HTML 外壳：把 SVG 内嵌成一个自包含页面 ──────────────────────
 def render_html(title, meta, primary_svg, alt_items, save_to):
     """alt_items: [(说明, svg), ...]。生成一个不依赖任何外部资源的 .html。"""
@@ -705,10 +905,12 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
 # ── orchestrator：一张最优 + 1~2 张候选视角，输出单个 HTML ────────
 def visualize(df, group_col=None, value_col=None, *, question, insight,
               audience, occasion=None, emphasize=None, hue_col=None, emphasize_hue=None,
-              chart_kind=None, save_to="chart.html"):
+              facet_col=None, chart_kind=None, save_to="chart.html"):
     """出图主入口。
     group_col=None → 单变量模式（直方图 / 大数字KPI）。
-    chart_kind 可手动覆盖自动路由（如 chart_kind='line' 强制折线，适用于整数年份等无法自动判断的有序 x）。
+    facet_col     → 小多图（每个 facet 值一个子图）。
+    chart_kind    → 手动覆盖路由（scatter / heatmap 必须手传；整数年份折线用 'line'）。
+      heatmap 时 hue_col 作为热力图列轴（第二分类维度）。
     occasion=None → 标准版（STANDARD_PALETTE + 受众注释地板），第 3 步默认走这条。
     occasion="keynote"/"internal"/"portfolio" → 4.1 精修：换场合配色、把注释往地板之上叠。
     """
@@ -716,11 +918,13 @@ def visualize(df, group_col=None, value_col=None, *, question, insight,
     occ = OCCASION_PROFILES[occasion] if occasion is not None else None    # 标准版不预设场合
     palette = occ["palette"] if occ is not None else STANDARD_PALETTE
 
-    _check_cardinality(df, group_col, hue_col)                             # 类别过多提前提示
-    chart_kind = chart_kind or _route(df, group_col, value_col, aud, hue_col)  # 选型单一真源（可覆盖）
+    _check_cardinality(df, group_col, hue_col, facet_col)                  # 类别过多提前提示
+    chart_kind = chart_kind or _route(df, group_col, value_col, aud, hue_col, facet_col)
     level = _resolve_level(audience, chart_kind, occ)                      # 受众地板 +（场合叠加）
     if group_col is None:
         descriptive = f"{value_col} 的分布"
+    elif facet_col:
+        descriptive = f"各{group_col} 按 {facet_col} 分面的{value_col}对比"
     elif hue_col:
         descriptive = f"各{group_col} × {hue_col} 的{value_col}分布"
     else:
@@ -745,6 +949,22 @@ def visualize(df, group_col=None, value_col=None, *, question, insight,
         primary_svg = rate_comparison(df, group_col, value_col, **common, show_ci=tech)
         alt_label = "低受众版 · 纯比例条" if tech else "技术版 · 含 95% 置信区间"
         alt_items = [(alt_label, rate_comparison(df, group_col, value_col, **common, show_ci=not tech))]
+    elif chart_kind == "facet_box":
+        primary_svg = facet_box_comparison(df, group_col, value_col, facet_col, **common)
+        alt_items = [("低受众版 · 分面均值条",
+                      facet_bar_means_comparison(df, group_col, value_col, facet_col, **common))]
+    elif chart_kind == "facet_bar_means":
+        primary_svg = facet_bar_means_comparison(df, group_col, value_col, facet_col, **common)
+        alt_items = [("技术版 · 分面箱线",
+                      facet_box_comparison(df, group_col, value_col, facet_col, **common))]
+    elif chart_kind == "scatter":
+        primary_svg = scatter_regression(df, group_col, value_col, **common, hue_col=hue_col)
+        alt_items = []
+    elif chart_kind == "heatmap":
+        if hue_col is None:
+            raise ValueError("heatmap 需要 hue_col 作为列轴（第二个分类维度）")
+        primary_svg = heatmap_comparison(df, group_col, hue_col, value_col, **common)
+        alt_items = []
     elif chart_kind == "line":
         primary_svg = line_trend(df, group_col, value_col, **common, hue_col=hue_col)
         alt_items = []
