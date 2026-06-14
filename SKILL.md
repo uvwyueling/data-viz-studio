@@ -128,21 +128,39 @@ render_deck(
 # ① 把上传文件读成 DataFrame（按扩展名分发，自动兜底 CSV 的 GBK/UTF-8 编码）
 df = load_dataframe(<上传文件路径>)        # .csv / .xlsx / .xls / .json
 
+# 文本型 0/1 列预处理（如 "yes"/"no" → 1/0）
+df["col_01"] = encode_binary(df, "col", pos_value="yes")
+
 # ② 出【标准版】（第 3 步）：不传 occasion
 visualize(df, group_col, value_col,
     question=…, insight=<第 2 步 EDA 得到的洞察>,
     audience=<high/mid/low>,
     emphasize=<要强调的组>,
-    hue_col=<可选：要对比的子总体列，如 survived；给了就出"分组对比图">,
+    hue_col=<可选：要对比的子总体列；给了就出"分组对比图">,
     emphasize_hue=<可选：高亮哪个子总体>,
+    chart_kind=<可选：手动覆盖路由，如 "line" 用于整数年份等无法自动判断的有序 x>,
     save_to="output.html")
+
+# 单变量模式：group_col 不传（或传 None）→ 直方图（mid/high）/ 大数字KPI（low）
+visualize(df, value_col="age", question=…, insight=…, audience=…, save_to=…)
 
 # ③ 4.1 精修（可选）：在标准版之上套场合
 visualize(..., occasion="keynote"/"internal"/"portfolio", ...)
 ```
 
-关键映射：数据问题落到 `group_col`（分类列）/ `value_col`（数值列），洞察里要强调的那组设 `emphasize`。
-路由自动（由 `_route` 统一判定）：value 列是 0/1 比例 → 走比率图；给了 `hue_col` → 走两/多子总体跨类别对比；受众 `low` → 分布类降级为均值条。
+**路由规则**（`_route` 单一真源，`chart_kind` 可覆盖）：
+
+| 条件（按优先级） | 路由结果 |
+|--|--|
+| `group_col=None` + low 受众 | `kpi`（大数字 KPI） |
+| `group_col=None` + mid/high | `histogram`（直方图） |
+| `hue_col` 非空 | `grouped_box`（low → `grouped_bar_means`） |
+| `value_col` 是 0/1 列 | `rate`（比率图） |
+| `group_col` 是 datetime | `line`（折线趋势图） |
+| low 受众 | `bar_means`（均值条） |
+| 其余 | `box`（箱线图） |
+
+**datetime 列以外的有序 x**（整数年份、月份字符串等）需手传 `chart_kind="line"`。
 这一步只渲染、不做判断——判断在第 1–4 步做完；**不要**在这里现写 matplotlib 代码。
 
 ## 自检列表

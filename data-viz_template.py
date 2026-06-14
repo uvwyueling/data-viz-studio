@@ -245,13 +245,17 @@ def _annotation_floor(audience, chart_kind):
     return 0
 
 
-def _route(df, value_col, aud, hue_col):
+def _route(df, group_col, value_col, aud, hue_col):
     """选型路由（单一真源）：按数据形状 + 受众，定这次画哪种图，返回 chart_kind。
     注释地板(_annotation_floor)与 visualize 的分发都依赖它。"""
+    if group_col is None:                                          # 单变量模式（直方图 / 大数字KPI）
+        return "kpi" if aud["downgrade"] else "histogram"
     if hue_col is not None:
         return "grouped_bar_means" if aud["downgrade"] else "grouped_box"
     if _looks_like_rate(df[value_col]):
         return "rate"
+    if _looks_like_trend(df[group_col]):                           # datetime 列 → 折线趋势图
+        return "line"
     if aud["downgrade"]:
         return "bar_means"
     return "box"
@@ -274,12 +278,13 @@ _HUE_WARN   = 4   # hue_col 超过这个数量发出警告
 
 def _check_cardinality(df, group_col, hue_col):
     """类别过多时提前告知，避免出一张谁也看不清的图。不抛错——只打印提示，让调用方决定是否截断。"""
-    n_groups = df[group_col].nunique()
-    if n_groups > _GROUP_WARN:
-        print(
-            f"[data-viz-studio] 警告：group_col='{group_col}' 有 {n_groups} 个类别（建议 ≤{_GROUP_WARN}）。"
-            f" 考虑用 df[df['{group_col}'].isin([...])] 筛选或按计数取 top-N，否则图会过于拥挤。"
-        )
+    if group_col is not None and not pd.api.types.is_datetime64_any_dtype(df[group_col]):
+        n_groups = df[group_col].nunique()
+        if n_groups > _GROUP_WARN:
+            print(
+                f"[data-viz-studio] 警告：group_col='{group_col}' 有 {n_groups} 个类别（建议 ≤{_GROUP_WARN}）。"
+                f" 考虑用 df[df['{group_col}'].isin([...])] 筛选或按计数取 top-N，否则图会过于拥挤。"
+            )
     if hue_col is not None:
         n_hues = df[hue_col].nunique()
         if n_hues > _HUE_WARN:
@@ -380,6 +385,12 @@ def _looks_like_rate(s):
     """value 列是不是 0/1 比例数据？是的话该走 rate_comparison，而不是 box/bar_means。"""
     u = set(pd.unique(s.dropna()))
     return 0 < len(u) <= 2 and u.issubset({0, 1, True, False})
+
+
+def _looks_like_trend(s):
+    """group_col 是否为时序（datetime dtype）？是则路由到折线趋势图。
+    整数年份（如 2020/2021）不自动判定，需手传 chart_kind='line' 明确指定。"""
+    return pd.api.types.is_datetime64_any_dtype(s)
 
 
 def _wilson_ci(p, n, z=1.96):
@@ -522,6 +533,138 @@ def grouped_bar_means_comparison(df, group_col, value_col, hue_col, *, insight, 
     return _fig_to_svg(fig)
 
 
+# ── 新增图型基元（v0.8）────────────────────────────────────────────
+
+def histogram_distribution(df, value_col, *, insight, descriptive,
+                           palette, audience_prof, level, emphasize=None,
+                           hue_col=None, bins="auto"):
+    """单变量分布直方图。hue_col 给了则叠加多组分布（半透明，便于比较形状）。
+    适合 mid/high 受众；low 受众由路由改走 kpi_number。
+    level >= 1 时在均值处画一条虚线参考线，帮助读者定位中心。"""
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    if hue_col is not None:
+        hues = sorted(df[hue_col].dropna().unique())
+        colors = _series_colors(palette, hues, emphasize)
+        for hue in hues:
+            vals = df[df[hue_col] == hue][value_col].dropna()
+            ax.hist(vals, bins=bins, color=colors[hue],
+                    edgecolor="none", alpha=0.72, label=str(hue))
+        ax.legend(title=hue_col, frameon=False, loc="upper right")
+    else:
+        ax.hist(df[value_col].dropna(), bins=bins,
+                color=palette["highlight"], edgecolor="none", alpha=0.85)
+
+    if level >= 1:
+        mean_val = df[value_col].dropna().mean()
+        ax.axvline(mean_val, color=palette["ink"], linestyle="--",
+                   linewidth=1.2, alpha=0.75)
+        ylim = ax.get_ylim()
+        ax.annotate(f"均值 {mean_val:.1f}",
+                    xy=(mean_val, ylim[1] * 0.88),
+                    xytext=(6, 0), textcoords="offset points",
+                    color=palette["ink"], fontsize=10, fontweight="bold")
+
+    _despine(ax, palette)
+    ax.yaxis.grid(True, color=palette["grid"])
+    ax.set_axisbelow(True)
+    ax.set_xlabel(value_col, color=palette["ink"])
+    ax.set_ylabel("频次", color=palette["ink"])
+    ax.tick_params(colors=palette["ink"])
+    _title(ax, audience_prof, insight, descriptive, palette)
+    return _fig_to_svg(fig)
+
+
+def line_trend(df, group_col, value_col, *, insight, descriptive,
+               palette, audience_prof, level, emphasize=None, hue_col=None):
+    """折线趋势图：x 轴为时间或有序序列，y 轴为各期均值。
+    hue_col 给了则画多条线（一条线 = 一个子总体）。
+    level >= 1 时在每个数据点标出数值，帮助低受众不必读坐标轴。"""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    if hue_col is not None:
+        hues = sorted(df[hue_col].dropna().unique())
+        colors = _series_colors(palette, hues, emphasize)
+        all_xs = []
+        for hue in hues:
+            sub = df[df[hue_col] == hue].groupby(group_col)[value_col].mean()
+            xs, ys = list(sub.index), sub.values
+            all_xs = xs  # 取最后一个系列的 x 轴（假设各系列 x 对齐）
+            ax.plot(xs, ys, color=colors[hue], linewidth=2.5,
+                    marker="o", markersize=6, label=str(hue))
+            if level >= 1:
+                for x, y in zip(xs, ys):
+                    ax.annotate(f"{y:.1f}", xy=(x, y), xytext=(0, 8),
+                                textcoords="offset points", ha="center",
+                                color=colors[hue], fontsize=9, fontweight="bold")
+        ax.legend(title=hue_col, frameon=False, loc="best")
+    else:
+        agg = df.groupby(group_col)[value_col].mean()
+        xs, ys = list(agg.index), agg.values
+        all_xs = xs
+        ax.plot(xs, ys, color=palette["highlight"], linewidth=2.5,
+                marker="o", markersize=7)
+        if level >= 1:
+            for x, y in zip(xs, ys):
+                ax.annotate(f"{y:.1f}", xy=(x, y), xytext=(0, 8),
+                            textcoords="offset points", ha="center",
+                            color=palette["ink"], fontsize=11, fontweight="bold")
+
+    if len(all_xs) > 6:
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+    _despine(ax, palette)
+    ax.yaxis.grid(True, color=palette["grid"])
+    ax.set_axisbelow(True)
+    ax.set_xlabel(group_col, color=palette["ink"])
+    ax.set_ylabel(value_col, color=palette["ink"])
+    ax.tick_params(colors=palette["ink"])
+    _title(ax, audience_prof, insight, descriptive, palette)
+    return _fig_to_svg(fig)
+
+
+def kpi_number(df, value_col, *, insight, descriptive,
+               palette, audience_prof, level, emphasize=None):
+    """大数字 KPI：低受众的单指标摘要——把最重要的数字放到最大。
+    自动检测 0/1 列并以百分比格式呈现；其余列展示均值。
+    level >= 1（低受众）时在图底部补一句结论（insight）。"""
+    s = df[value_col].dropna()
+    is_rate = _looks_like_rate(s)
+    val = s.mean()
+    n = len(s)
+
+    if is_rate:
+        val_fmt = f"{val:.0%}"
+        unit_label = "（占比）"
+    elif val == int(val):
+        val_fmt = f"{int(val):,}"
+        unit_label = ""
+    elif abs(val) >= 100:
+        val_fmt = f"{val:,.1f}"
+        unit_label = "（均值）"
+    else:
+        val_fmt = f"{val:.2f}"
+        unit_label = "（均值）"
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.axis("off")
+    # 大数字
+    ax.text(0.5, 0.60, val_fmt, transform=ax.transAxes,
+            ha="center", va="center", fontsize=72, fontweight="900",
+            color=palette["highlight"])
+    # 指标标签
+    ax.text(0.5, 0.28, f"{value_col}{unit_label}", transform=ax.transAxes,
+            ha="center", va="center", fontsize=15, color=palette["ink"])
+    # 样本量
+    ax.text(0.5, 0.12, f"n = {n:,}", transform=ax.transAxes,
+            ha="center", va="center", fontsize=11, color=palette["muted"])
+    # 一句结论（level >= 1 = 低受众必有）
+    if level >= 1 and insight:
+        fig.text(0.5, 0.02, insight, ha="center", fontsize=10,
+                 color=palette["ink"], fontweight="bold")
+
+    return _fig_to_svg(fig)
+
+
 # ── HTML 外壳：把 SVG 内嵌成一个自包含页面 ──────────────────────
 def render_html(title, meta, primary_svg, alt_items, save_to):
     """alt_items: [(说明, svg), ...]。生成一个不依赖任何外部资源的 .html。"""
@@ -560,10 +703,12 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
 
 
 # ── orchestrator：一张最优 + 1~2 张候选视角，输出单个 HTML ────────
-def visualize(df, group_col, value_col, *, question, insight,
+def visualize(df, group_col=None, value_col=None, *, question, insight,
               audience, occasion=None, emphasize=None, hue_col=None, emphasize_hue=None,
-              save_to="chart.html"):
+              chart_kind=None, save_to="chart.html"):
     """出图主入口。
+    group_col=None → 单变量模式（直方图 / 大数字KPI）。
+    chart_kind 可手动覆盖自动路由（如 chart_kind='line' 强制折线，适用于整数年份等无法自动判断的有序 x）。
     occasion=None → 标准版（STANDARD_PALETTE + 受众注释地板），第 3 步默认走这条。
     occasion="keynote"/"internal"/"portfolio" → 4.1 精修：换场合配色、把注释往地板之上叠。
     """
@@ -572,10 +717,14 @@ def visualize(df, group_col, value_col, *, question, insight,
     palette = occ["palette"] if occ is not None else STANDARD_PALETTE
 
     _check_cardinality(df, group_col, hue_col)                             # 类别过多提前提示
-    chart_kind = _route(df, value_col, aud, hue_col)                       # 选型单一真源
+    chart_kind = chart_kind or _route(df, group_col, value_col, aud, hue_col)  # 选型单一真源（可覆盖）
     level = _resolve_level(audience, chart_kind, occ)                      # 受众地板 +（场合叠加）
-    descriptive = (f"各{group_col} × {hue_col} 的{value_col}分布" if hue_col
-                   else f"各{group_col}的{value_col}对比")
+    if group_col is None:
+        descriptive = f"{value_col} 的分布"
+    elif hue_col:
+        descriptive = f"各{group_col} × {hue_col} 的{value_col}分布"
+    else:
+        descriptive = f"各{group_col}的{value_col}对比"
 
     common = dict(insight=insight, descriptive=descriptive, palette=palette,
                   audience_prof=aud, level=level, emphasize=emphasize)
@@ -596,6 +745,15 @@ def visualize(df, group_col, value_col, *, question, insight,
         primary_svg = rate_comparison(df, group_col, value_col, **common, show_ci=tech)
         alt_label = "低受众版 · 纯比例条" if tech else "技术版 · 含 95% 置信区间"
         alt_items = [(alt_label, rate_comparison(df, group_col, value_col, **common, show_ci=not tech))]
+    elif chart_kind == "line":
+        primary_svg = line_trend(df, group_col, value_col, **common, hue_col=hue_col)
+        alt_items = []
+    elif chart_kind == "histogram":
+        primary_svg = histogram_distribution(df, value_col, **common, hue_col=hue_col)
+        alt_items = [("低受众版 · 大数字KPI", kpi_number(df, value_col, **common))]
+    elif chart_kind == "kpi":
+        primary_svg = kpi_number(df, value_col, **common)
+        alt_items = [("技术版 · 直方图", histogram_distribution(df, value_col, **common, hue_col=hue_col))]
     elif chart_kind == "bar_means":
         primary_svg = bar_means_comparison(df, group_col, value_col, **common)
         alt_items = [("技术版 · 箱线图", box_comparison(df, group_col, value_col, **common))]
