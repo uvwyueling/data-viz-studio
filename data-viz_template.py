@@ -130,7 +130,13 @@ def load_dataframe(path):
     if ext == ".csv":
         df = _read_csv_smart(path)
     elif ext in (".xlsx", ".xls"):
-        df = pd.read_excel(path)          # .xlsx 需 openpyxl，.xls 需 xlrd
+        try:
+            df = pd.read_excel(path)
+        except ImportError as e:
+            engine = "xlrd" if ext == ".xls" else "openpyxl"
+            raise ImportError(
+                f"读取 {ext} 需要 {engine}，请先安装：pip install {engine}"
+            ) from e
     elif ext == ".json":
         df = _read_json_smart(path)
     else:
@@ -161,6 +167,14 @@ def _read_json_smart(path):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return pd.json_normalize(data)
+
+
+def encode_binary(df, col, pos_value):
+    """文本型 0/1 标签列转换为数值（如 "yes"/"no" → 1/0）。
+    pos_value 是代表"正例/1"的那个值（如 "yes"、"存活"、True）；其余非空值一律编为 0。
+    用法：df["survived_01"] = encode_binary(df, "survived", "yes")
+    """
+    return df[col].map(lambda v: 1 if v == pos_value else (0 if pd.notna(v) else float("nan")))
 
 
 def _basic_clean(df):
@@ -254,6 +268,27 @@ ANNOTATE_MAX = 2
 
 
 # ── 工具 ────────────────────────────────────────────────────────
+_GROUP_WARN = 8    # group_col 超过这个数量发出警告
+_HUE_WARN   = 4   # hue_col 超过这个数量发出警告
+
+
+def _check_cardinality(df, group_col, hue_col):
+    """类别过多时提前告知，避免出一张谁也看不清的图。不抛错——只打印提示，让调用方决定是否截断。"""
+    n_groups = df[group_col].nunique()
+    if n_groups > _GROUP_WARN:
+        print(
+            f"[data-viz-studio] 警告：group_col='{group_col}' 有 {n_groups} 个类别（建议 ≤{_GROUP_WARN}）。"
+            f" 考虑用 df[df['{group_col}'].isin([...])] 筛选或按计数取 top-N，否则图会过于拥挤。"
+        )
+    if hue_col is not None:
+        n_hues = df[hue_col].nunique()
+        if n_hues > _HUE_WARN:
+            print(
+                f"[data-viz-studio] 警告：hue_col='{hue_col}' 有 {n_hues} 个系列（建议 ≤{_HUE_WARN}）。"
+                f" 超过 {_HUE_WARN} 个系列时分组图会过于拥挤，考虑改用分面（small multiples）。"
+            )
+
+
 def _despine(ax, palette):
     for s in ["top", "right"]:
         ax.spines[s].set_visible(False)
@@ -536,6 +571,7 @@ def visualize(df, group_col, value_col, *, question, insight,
     occ = OCCASION_PROFILES[occasion] if occasion is not None else None    # 标准版不预设场合
     palette = occ["palette"] if occ is not None else STANDARD_PALETTE
 
+    _check_cardinality(df, group_col, hue_col)                             # 类别过多提前提示
     chart_kind = _route(df, value_col, aud, hue_col)                       # 选型单一真源
     level = _resolve_level(audience, chart_kind, occ)                      # 受众地板 +（场合叠加）
     descriptive = (f"各{group_col} × {hue_col} 的{value_col}分布" if hue_col
