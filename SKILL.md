@@ -74,6 +74,54 @@ description: 把用户上传的数据集（CSV/Excel/JSON）+ 一个数据问题
 | `internal` 团队内部汇报 | 团队 / 品牌色 | 适度 |
 | `portfolio` 作品集 / 对外 | 强设计语言、自定义排印 | 引导式叙事标注 |
 
+### 4.1 演示版式（Deck）→ 低受众 keynote 的确定性呈现层
+
+`scripts/deck.py · render_deck(...)` 把已渲染的 matplotlib SVG + 数据摘要，组装成 **16:9 自包含 HTML** 演示页。
+
+**架构归属**（外壳与内容不焊回去）：
+- **外壳**（16:9 画布 / 左蓝条 / 页眉页脚 / 栅格）= 格式/场合轴。外壳与受众无关，可复用给 mid/high。
+- **内容块**（KPI 卡 / callout / 图表 SVG）= 受众轴（由 `data-viz_template.py` 产出）。
+
+**纪律**：deck 不重选图型、不另加图表注释——图型判断和注释地板由渲染层已处理完毕；`chart_svg` 原样内嵌。
+
+**token 单一真源**：`assets/deck-tokens.css`（字号阶 / 行距 / 间距 / 语义色 / 16:9 画布）。所有组件只从这里取值，不写裸数值。语义色 emphasis/muted 与 `STANDARD_PALETTE` 一致，外壳与内嵌图表同色系。
+
+**槽位系统**：
+
+| 槽位 | 类型 | 点亮条件 |
+|--|--|--|
+| KPI 卡 ×N | 地板（必出）| 始终渲染 |
+| 核心发现 callout | 地板（必出）| 始终渲染 |
+| 图表块 | 地板（必出）| 始终渲染 |
+| `gap_bar` 差距条 | 可选 | ⟺ 恰好两组对比（传 `None` 则整块不渲染）|
+| `mini_bars` 迷你条排 | 可选 | ⟺ 存在额外分组维度（传 `None` 则整块不渲染）|
+
+```python
+# 先从渲染层拿 SVG（直接调图型基元，不经 visualize()）
+import importlib, sys
+sys.path.insert(0, "<repo_root>")
+tmpl = importlib.import_module("data-viz_template")
+tmpl.setup_cjk_font()
+
+chart_svg = tmpl.bar_means_comparison(df, group_col, value_col,
+    insight=insight, descriptive=…,
+    palette=tmpl.STANDARD_PALETTE,
+    audience_prof=tmpl.AUDIENCE_PROFILES["low"],
+    level=1, emphasize=…)
+
+# 再组装 deck
+from scripts.deck import render_deck
+render_deck(
+    title=…, subtitle=…,
+    kpi_cards=[{"label": …, "value": …}, …],
+    callout=…,          # 一句结论
+    chart_svg=chart_svg,
+    gap_bar={"groups": [g0, g1], "values": [v0, v1], "unit": …},  # 两组时传
+    mini_bars=[{"label": …, "value": …}, …],                       # 多维度时传
+    source=…,
+    save_to="deck.html")
+```
+
 ## 调用渲染层
 
 ```python
@@ -110,4 +158,5 @@ visualize(..., occasion="keynote"/"internal"/"portfolio", ...)
 
 ## 维护
 <每次手动改了图，把那条规则回填到对应小节——这是经验沉淀的入口。
-新增图型时，记得在 `_BORDERLINE_FOR_MID` 登记它对「中」受众是否临界（要不要补解读句）。>
+新增图型时，记得在 `_BORDERLINE_FOR_MID` 登记它对「中」受众是否临界（要不要补解读句）。
+新增 deck 槽位时，在「槽位系统」表里登记它的点亮条件（不登记 = 调用者不知道什么时候传）。>
