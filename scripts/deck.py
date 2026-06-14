@@ -5,7 +5,7 @@ data-viz-studio · 16:9 演示版式（scripts/deck.py）
 
 架构归属
   外壳（16:9 画布 / 左蓝条 / 页眉页脚 / 栅格）= 格式/场合轴（4.1 精修，keynote 风格）。
-  内容块（KPI 卡 / callout / 图表 SVG）= 受众轴（由 data-viz_template.py 产出）。
+  内容块（KPI 卡 / callout / 图表 SVG）= 受众轴（由 scripts/dataviz 产出）。
   → 两轴解耦：外壳不依赖受众档，可复用给其他受众；内容块不自选图型、不自加注释。
 
 四个 bug 的结构性消灭
@@ -398,7 +398,7 @@ def render_deck(
     """产出自包含 16:9 HTML 演示页。
 
     kpi_cards: [{"label": str, "value": str}, …]
-    chart_svg: 由 data-viz_template.py 图型基元产出的 SVG 字符串
+    chart_svg: 由 scripts/dataviz 图型基元产出的 SVG 字符串
                （deck 不重选图型、不另加注释——所有判断已在渲染层完成）。
     palette: 与 chart_svg 渲染时同一份 palette（如 tmpl.STANDARD_PALETTE）。
     gap_bar=None  → 差距条整块不渲染（不留空壳）。
@@ -463,14 +463,9 @@ def render_deck(
 
 # ── Demo：验收两张 deck ───────────────────────────────────────────
 if __name__ == "__main__":
-    import sys
-    import importlib
     import numpy as np
     import pandas as pd
-
-    # data-viz_template.py 含连字符，无法直接 import
-    sys.path.insert(0, str(_REPO_ROOT))
-    tmpl = importlib.import_module("data-viz_template")
+    import dataviz as tmpl
 
     print("使用字体:", tmpl.setup_cjk_font())
 
