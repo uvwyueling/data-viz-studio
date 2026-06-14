@@ -1,12 +1,20 @@
 """
-data-viz-studio · 种子模板 (v0.5)
+data-viz-studio · 种子模板 (v0.6)
 ==================================
-单一职责：读取用户上传的 CSV/Excel → 输出能回答【数据问题】、并向【特定技术画像受众】、
-在【特定使用场合】下以最低沟通成本传达洞察的可视化图。
+单一职责：读取用户上传的 CSV/Excel → 输出能回答【数据问题】、并以适配【受众图型素养】
+的图像语言、最低沟通成本传达洞察的可视化图。
 
-── 输出（v0.3 变更）────────────────────────────────────────────
-路线 A：matplotlib 出图 → 存成 SVG → 内嵌进一个自包含的 HTML 页面。
-所有判断逻辑（场合配色 / 受众降级 / 注释组合）原样保留，只换了最后的输出层。
+── 架构（v0.6 变更：受众轴成为唯一常驻核心）────────────────────
+受众轴决定图表「是什么」（图型选择 + 注释地板，结构层、不可逆、用户自己判断不了）——这是核心。
+场合轴降为「标准版出图后」的可选精修（4.1）：改配色/注释/尺寸/格式（样式层、可逆、用户自己有主见）。
+默认出「标准版」：用 STANDARD_PALETTE + 受众注释地板，不预设任何场合。
+
+── 注释模型（两层，分别挂在两根轴上）──────────────────────────
+地板 = 受众档固有属性（单一真源 _annotation_floor）：low 含直接标注+结论；mid 遇箱线类补一句解读。
+叠加 = 场合（4.1）在地板之上加叙事注释——只增不减，绝不压到地板以下。
+
+── 输出（v0.3 起）─────────────────────────────────────────────
+matplotlib 出图 → 存成 SVG（字形外框化）→ 内嵌进一个自包含的 HTML 页面。
 
 ── 分层（重要）────────────────────────────────────────────────
 本文件 = 确定性渲染层：套配色、选图型/降级、定注释、出图。
@@ -163,13 +171,11 @@ def _basic_clean(df):
     return df.drop_duplicates().reset_index(drop=True)
 
 
-# ── 1. 使用场合 → 配色 + 注释基准〔Valeria 校准〕────────────────────
-# annotate_base: 图上注释的"基准档"（0=最少，靠标题/图注；1=补一句关键标注；2=叙事式多标注）
+# ── 1. 场合预设（4.1 精修）→ 配色 + 注释叠加〔Valeria 校准〕──────────
+# v0.6：场合不再是出图入口闸门，而是「标准版出图后」的可选精修预设。
+# annotate_base 改为「叠加档」：只能把注释往受众地板之上抬，绝不减到地板以下（见 _resolve_level）。
+# 「理科期刊图」场景已下线：既用不上受众翻译引擎（读者恒为 high），又要矢量 PDF 管线（本层只出 HTML）。
 OCCASION_PROFILES = {
-    "journal": {   # 理科期刊图：色盲安全、克制、细节靠图注承载
-        "label": "理科期刊图", "annotate_base": 0,
-        "palette": {"highlight": "#4C72B0", "muted": "#BFC4CB", "ink": "#1a1a1a", "grid": "#ececec"},
-    },
     "keynote": {   # 大型公众演讲单页：大字大色块、讲者口头解释、图上文字极少
         "label": "公众演讲单页", "annotate_base": 0,
         "palette": {"highlight": "#E4572E", "muted": "#D9DCE1", "ink": "#222222", "grid": "#efefef"},
@@ -185,12 +191,64 @@ OCCASION_PROFILES = {
 }
 
 
-# ── 2. 受众技术画像 → 图型降级 + 注释加成 + 标题写法〔运行时由用户指定〕──
+# ── 1.5 标准版样式基线（TODO 里删掉「样式基线」一词后，它在这里落地）────
+# 这是 standard version 的视觉 DNA：一个高亮 + 中性灰，色盲友好、克制中性、沟通优先。
+# 它不是某个场合的风格，而是「还没指定场合时」有意选定的默认。4.1 的场合预设在它之上改写。
+STANDARD_PALETTE = {"highlight": "#2F6690", "muted": "#C9CFD6", "ink": "#1a1a1a", "grid": "#ececec"}
+
+
+# ── 2. 受众图型素养 → 图型降级 + 标题写法〔运行时由用户指定〕──────────
+# v0.6：受众档以「能读懂哪种图型」定义，不再用职业标签（高管/科研只是代理，且常猜错）。
+#   high  ↔ 能直接读懂箱线图
+#   mid   ↔ 读不了箱线、但跟得上直方图              （高/中分界 = 箱线图）
+#   low   ↔ 连直方图都吃力，需降级为均值条+直接标注    （中/低分界 = 直方图/分布）
+# 注释地板已移出本表，改由 _annotation_floor 统一管（单一真源），不再用 annotate_bump。
 AUDIENCE_PROFILES = {
-    "high": {"label": "数据/分析专业", "downgrade": False, "annotate_bump": 0, "title_mode": "descriptive"},
-    "mid":  {"label": "业务/产品",     "downgrade": False, "annotate_bump": 0, "title_mode": "takeaway"},
-    "low":  {"label": "高管/外行",     "downgrade": True,  "annotate_bump": 1, "title_mode": "takeaway"},
+    "high": {"label": "能直接读懂箱线图", "downgrade": False, "title_mode": "descriptive"},
+    "mid":  {"label": "读不了箱线、能读直方图", "downgrade": False, "title_mode": "takeaway"},
+    "low":  {"label": "连直方图都吃力，需降级+直接标注", "downgrade": True, "title_mode": "takeaway"},
 }
+
+
+# ── 2.5 注释地板：受众档的固有属性（单一真源）──────────────────────
+# 把"中受众遇箱线类要补一句解读"做成 (audience, chart_kind) 查表，而非复制进每个图型函数（DRY）。
+# _BORDERLINE_FOR_MID：哪些图型对「中」受众算"临界/要翻译"——这条属性也是 references 图型目录该登记的字段。
+_BORDERLINE_FOR_MID = {"box", "grouped_box"}
+
+
+def _annotation_floor(audience, chart_kind):
+    """受众注释地板（固有属性，单一真源）。返回 level：
+       0=仅标题+轴；1=加一句解读/结论；2=叙事式多标注。
+    - low：地板=1 —— 必含直接标注(柱顶数值，图型函数无条件给)+一句结论；这是低受众读懂图的结构，不是装饰。
+    - mid + 临界图型（箱线类）：地板=1 —— 补一句翻译解读。
+    - mid + 普通图型 / high：地板=0 —— 裸图可读。
+    场合（4.1）只能在此地板之上叠加（见 _resolve_level），绝不减到地板以下。
+    """
+    if audience == "low":
+        return 1
+    if audience == "mid" and chart_kind in _BORDERLINE_FOR_MID:
+        return 1
+    return 0
+
+
+def _route(df, value_col, aud, hue_col):
+    """选型路由（单一真源）：按数据形状 + 受众，定这次画哪种图，返回 chart_kind。
+    注释地板(_annotation_floor)与 visualize 的分发都依赖它。"""
+    if hue_col is not None:
+        return "grouped_bar_means" if aud["downgrade"] else "grouped_box"
+    if _looks_like_rate(df[value_col]):
+        return "rate"
+    if aud["downgrade"]:
+        return "bar_means"
+    return "box"
+
+
+def _resolve_level(audience, chart_kind, occ):
+    """最终注释档 = 受众地板；场合（4.1）只能往上叠，不能压到地板以下。"""
+    level = _annotation_floor(audience, chart_kind)
+    if occ is not None:
+        level = max(level, occ["annotate_base"])
+    return min(ANNOTATE_MAX, level)
 
 ANNOTATE_MAX = 2
 
@@ -468,51 +526,56 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
 
 # ── orchestrator：一张最优 + 1~2 张候选视角，输出单个 HTML ────────
 def visualize(df, group_col, value_col, *, question, insight,
-              audience, occasion, emphasize=None, hue_col=None, emphasize_hue=None,
+              audience, occasion=None, emphasize=None, hue_col=None, emphasize_hue=None,
               save_to="chart.html"):
-    occ = OCCASION_PROFILES[occasion]
+    """出图主入口。
+    occasion=None → 标准版（STANDARD_PALETTE + 受众注释地板），第 3 步默认走这条。
+    occasion="keynote"/"internal"/"portfolio" → 4.1 精修：换场合配色、把注释往地板之上叠。
+    """
     aud = AUDIENCE_PROFILES[audience]
-    palette = occ["palette"]
-    level = max(0, min(ANNOTATE_MAX, occ["annotate_base"] + aud["annotate_bump"]))  # ← 你定的组合规则
+    occ = OCCASION_PROFILES[occasion] if occasion is not None else None    # 标准版不预设场合
+    palette = occ["palette"] if occ is not None else STANDARD_PALETTE
+
+    chart_kind = _route(df, value_col, aud, hue_col)                       # 选型单一真源
+    level = _resolve_level(audience, chart_kind, occ)                      # 受众地板 +（场合叠加）
     descriptive = (f"各{group_col} × {hue_col} 的{value_col}分布" if hue_col
                    else f"各{group_col}的{value_col}对比")
 
     common = dict(insight=insight, descriptive=descriptive, palette=palette,
                   audience_prof=aud, level=level, emphasize=emphasize)
 
-    # 给了 hue_col → 两/多子总体跨类别对比（分组箱线 / 低受众降级为分组均值条）
-    if hue_col is not None:
+    # 按 chart_kind 分发（路由已在 _route 定好，这里只取对应图元 + 配一张候选视角）
+    if chart_kind == "grouped_box":
         gcommon = dict(common, emphasize_hue=emphasize_hue)
-        if aud["downgrade"]:
-            primary_svg = grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon)
-            alt_items = [("技术受众视角 · 分组箱线",
-                          grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon))]
-        else:
-            primary_svg = grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon)
-            alt_items = [("高管视角 · 分组均值条",
-                          grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon))]
-    # 否则看数据类型：0/1 比例数据 → 比率图（box/bar_means 对比例都是错的）
-    elif _looks_like_rate(df[value_col]):
+        primary_svg = grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon)
+        alt_items = [("低受众版 · 分组均值条",
+                      grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon))]
+    elif chart_kind == "grouped_bar_means":
+        gcommon = dict(common, emphasize_hue=emphasize_hue)
+        primary_svg = grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon)
+        alt_items = [("技术版 · 分组箱线",
+                      grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon))]
+    elif chart_kind == "rate":
         tech = not aud["downgrade"]   # 技术受众默认带 95% 置信区间，低受众用纯比例条
         primary_svg = rate_comparison(df, group_col, value_col, **common, show_ci=tech)
-        alt_label = "高管视角 · 纯比例条" if tech else "技术受众视角 · 含 95% 置信区间"
+        alt_label = "低受众版 · 纯比例条" if tech else "技术版 · 含 95% 置信区间"
         alt_items = [(alt_label, rate_comparison(df, group_col, value_col, **common, show_ci=not tech))]
-    # 否则按受众驱动图型：低画像降级为均值条，否则用箱线图
-    elif aud["downgrade"]:
+    elif chart_kind == "bar_means":
         primary_svg = bar_means_comparison(df, group_col, value_col, **common)
-        alt_items = [("技术受众视角 · 箱线图", box_comparison(df, group_col, value_col, **common))]
-    else:
+        alt_items = [("技术版 · 箱线图", box_comparison(df, group_col, value_col, **common))]
+    else:  # box
         primary_svg = box_comparison(df, group_col, value_col, **common)
-        alt_items = [("高管视角 · 均值条", bar_means_comparison(df, group_col, value_col, **common))]
+        alt_items = [("低受众版 · 均值条", bar_means_comparison(df, group_col, value_col, **common))]
 
-    meta = f"受众：{aud['label']} ｜ 场合：{occ['label']} ｜ 注释档：{level}"
+    version_label = occ["label"] if occ is not None else "标准版（受众地板）"
+    meta = f"受众：{aud['label']} ｜ 版本：{version_label} ｜ 注释档：{level}"
     path = render_html(title=question, meta=meta,
                        primary_svg=primary_svg, alt_items=alt_items, save_to=save_to)
-    return {"html": path, "annotation_level": level,
-            "occasion": occ["label"], "audience": aud["label"]}
+    return {"html": path, "annotation_level": level, "chart_kind": chart_kind,
+            "version": version_label, "audience": aud["label"]}
 
 
-# ── demo：把两个决定都跑出来，输出 HTML ─────────────────────────
+# ── demo：标准版 + 一次 4.1 精修，输出 HTML ───────────────────────
 if __name__ == "__main__":
     print("使用字体:", setup_cjk_font())
     rng = np.random.default_rng(7)
@@ -523,12 +586,20 @@ if __name__ == "__main__":
     })
     insight = "调剂学生首年GPA显著更低"  # 真实调用里由 Claude 的 EDA 步产出
 
+    # 案例1 · 标准版（low）：不传 occasion → STANDARD_PALETTE + 受众地板（均值条 + 直接标注 + 结论）
     r1 = visualize(df, "分组", "首年GPA",
                    question="自选 vs 调剂，首年GPA有差异吗？", insight=insight,
-                   audience="low", occasion="keynote", emphasize="调剂", save_to="c1.html")
-    print("案例1:", r1)
+                   audience="low", emphasize="调剂", save_to="c1.html")
+    print("案例1 · 标准版/low :", r1)
 
+    # 案例2 · 标准版（high）：箱线图，地板=0（裸图可读）
     r2 = visualize(df, "分组", "首年GPA",
                    question="自选 vs 调剂，首年GPA有差异吗？", insight=insight,
-                   audience="high", occasion="journal", emphasize="调剂", save_to="c2.html")
-    print("案例2:", r2)
+                   audience="high", emphasize="调剂", save_to="c2.html")
+    print("案例2 · 标准版/high:", r2)
+
+    # 案例3 · 4.1 精修（low + keynote）：标准版之上套演讲场合配色；注释仍不低于受众地板
+    r3 = visualize(df, "分组", "首年GPA",
+                   question="自选 vs 调剂，首年GPA有差异吗？", insight=insight,
+                   audience="low", occasion="keynote", emphasize="调剂", save_to="c3.html")
+    print("案例3 · 4.1精修/low+keynote:", r3)
