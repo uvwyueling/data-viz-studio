@@ -1,8 +1,8 @@
 /* data-viz-studio · 16:9 deck 演示版式 · token 单一真源
    ──────────────────────────────────────────────────────
-   所有 deck 组件只从这里取值，禁止逐元素写死数值。
-   语义色 emphasis/muted/ink/grid 与 data-viz_template.py 的 STANDARD_PALETTE 保持一致，
-   保证 HTML 外壳和内嵌 matplotlib SVG 同色系。
+   行距、字号、间距基准和结构 token 从这里取值。
+   调色板语义色由 scripts/deck.py 在 render_deck(palette=...) 时从 Python palette 注入，
+   保证 HTML 外壳和内嵌 matplotlib SVG 同源同色。
 */
 :root {
   /* ── 字号阶（所有组件只用这些名字，禁止裸 px/rem）── */
@@ -31,16 +31,11 @@
   --card-radius: 8px;
   --card-max-w:  176px;
 
-  /* ── 语义色（与 Python STANDARD_PALETTE 一致）── */
-  --color-emphasis:   #2F6690; /* = STANDARD_PALETTE["highlight"] */
-  --color-muted:      #C9CFD6; /* = STANDARD_PALETTE["muted"]     */
-  --color-ink:        #1a1a1a; /* = STANDARD_PALETTE["ink"]       */
-  --color-grid:       #ececec; /* = STANDARD_PALETTE["grid"]      */
+  /* ── deck 专属语义色（调色板语义色由 Python palette 注入）── */
   --color-negative:   #C0392B; /* 差距 / 负向数值 */
   --color-surface-0:  #ffffff; /* 幻灯片底色 */
   --color-surface-1:  #F5F7FA; /* 卡片底色 */
   --color-surface-2:  #EDF2F7; /* callout 底色 */
-  --color-accent-bar: #2F6690; /* 左侧蓝条（与 emphasis 同色） */
 
   /* ── 16:9 画布 ── */
   --canvas-w:       960px;

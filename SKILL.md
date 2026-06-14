@@ -55,7 +55,7 @@ description: 把用户上传的数据集（CSV/Excel/JSON）+ 一个数据问题
 | 受众档 | 分界判据 | 读得懂的图型集 | 注释地板（固有属性） |
 |--|--|--|--|
 | **high** | 直接读懂**箱线图** | 箱线 / 小提琴 / ECDF / 散点+回归 / 热力图 / 对数轴 / 误差棒 | 主标题 + x/y 轴标签 |
-| **mid** | 读不了箱线，但跟得上**直方图** | 条形 / 折线 / 分组堆叠 / 直方 / 散点；箱线临界 | 主标题 + 轴标签 +（**遇箱线类补一句解读**） |
+| **mid** | 读不了箱线，但跟得上**直方图** | 条形 / 折线 / 分组堆叠 / 直方 / 散点；热力；箱线临界 | 主标题 + 轴标签 +（**遇箱线类补一句解读**） |
 | **low** | 连直方图都"盯着发呆" | 条形 / 折线 / 大数字 KPI / 简单部分对整体；**避免分布类与双编码** | 主标题 + 轴标签 + **直接标注 + 一句结论** |
 
 注释地板是**受众档的固有属性**，不是一个可调旋钮：每一档的图型与它必需的注释是一体的（low 的直接标注、mid 遇箱线的解读句，都是「读懂这张图」的结构，不是装饰）。
@@ -84,7 +84,7 @@ description: 把用户上传的数据集（CSV/Excel/JSON）+ 一个数据问题
 
 **纪律**：deck 不重选图型、不另加图表注释——图型判断和注释地板由渲染层已处理完毕；`chart_svg` 原样内嵌。
 
-**token 单一真源**：`assets/deck-tokens.css`（字号阶 / 行距 / 间距 / 语义色 / 16:9 画布）。所有组件只从这里取值，不写裸数值。语义色 emphasis/muted 与 `STANDARD_PALETTE` 一致，外壳与内嵌图表同色系。
+**token 单一真源**：`assets/deck-tokens.css`（字号阶 / 行距 / 间距基准 / 结构 token / deck 专属色）。调色板语义色由 `render_deck(palette=...)` 从 Python palette 注入；少量结构尺寸（列宽 / 轨道高 / 边框）由组件局部定义。
 
 **槽位系统**：
 
@@ -102,10 +102,11 @@ import importlib, sys
 sys.path.insert(0, "<repo_root>")
 tmpl = importlib.import_module("data-viz_template")
 tmpl.setup_cjk_font()
+pal = tmpl.STANDARD_PALETTE
 
 chart_svg = tmpl.bar_means_comparison(df, group_col, value_col,
     insight=insight, descriptive=…,
-    palette=tmpl.STANDARD_PALETTE,
+    palette=pal,
     audience_prof=tmpl.AUDIENCE_PROFILES["low"],
     level=1, emphasize=…)
 
@@ -116,6 +117,7 @@ render_deck(
     kpi_cards=[{"label": …, "value": …}, …],
     callout=…,          # 一句结论
     chart_svg=chart_svg,
+    palette=pal,        # 与 chart_svg 使用同一份 palette
     gap_bar={"groups": [g0, g1], "values": [v0, v1], "unit": …},  # 两组时传
     mini_bars=[{"label": …, "value": …}, …],                       # 多维度时传
     source=…,
@@ -138,11 +140,20 @@ visualize(df, group_col, value_col,
     emphasize=<要强调的组>,
     hue_col=<可选：要对比的子总体列；给了就出"分组对比图">,
     emphasize_hue=<可选：高亮哪个子总体>,
+    facet_col=<可选：分面列；给了就出 small multiples>,
     chart_kind=<可选：手动覆盖路由，如 "line" 用于整数年份等无法自动判断的有序 x>,
     save_to="output.html")
 
 # 单变量模式：group_col 不传（或传 None）→ 直方图（mid/high）/ 大数字KPI（low）
 visualize(df, value_col="age", question=…, insight=…, audience=…, save_to=…)
+
+# 散点 + 回归：group_col 传 x_col，value_col 传 y_col；可选 hue_col 分系列
+visualize(df, group_col="age", value_col="income",
+    question=…, insight=…, audience=…, chart_kind="scatter", hue_col=…, save_to=…)
+
+# 热力图：group_col 传 row_col，hue_col 传 col_col，value_col 传格子聚合值
+visualize(df, group_col="class", hue_col="sex", value_col="age",
+    question=…, insight=…, audience=…, chart_kind="heatmap", save_to=…)
 
 # ③ 4.1 精修（可选）：在标准版之上套场合
 visualize(..., occasion="keynote"/"internal"/"portfolio", ...)
@@ -154,6 +165,7 @@ visualize(..., occasion="keynote"/"internal"/"portfolio", ...)
 |--|--|
 | `group_col=None` + low 受众 | `kpi`（大数字 KPI） |
 | `group_col=None` + mid/high | `histogram`（直方图） |
+| `facet_col` 非空 | `facet_box`（low → `facet_bar_means`） |
 | `hue_col` 非空 | `grouped_box`（low → `grouped_bar_means`） |
 | `value_col` 是 0/1 列 | `rate`（比率图） |
 | `group_col` 是 datetime | `line`（折线趋势图） |

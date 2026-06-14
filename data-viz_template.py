@@ -227,6 +227,9 @@ AUDIENCE_PROFILES = {
 # ── 2.5 注释地板：受众档的固有属性（单一真源）──────────────────────
 # 把"中受众遇箱线类要补一句解读"做成 (audience, chart_kind) 查表，而非复制进每个图型函数（DRY）。
 # _BORDERLINE_FOR_MID：哪些图型对「中」受众算"临界/要翻译"——这条属性也是 references 图型目录该登记的字段。
+# 原则：临界 = 图型在中受众舒适区之上、仍展示时补一句翻译。
+# histogram 在中受众下沿但够得着，不登记；scatter/heatmap 是高受众图，对中受众够不着，登记。
+# high 受众任何图机制天然返回 0，无需登记。
 _BORDERLINE_FOR_MID = {"box", "grouped_box", "facet_box", "scatter", "heatmap"}
 
 
@@ -234,7 +237,7 @@ def _annotation_floor(audience, chart_kind):
     """受众注释地板（固有属性，单一真源）。返回 level：
        0=仅标题+轴；1=加一句解读/结论；2=叙事式多标注。
     - low：地板=1 —— 必含直接标注(柱顶数值，图型函数无条件给)+一句结论；这是低受众读懂图的结构，不是装饰。
-    - mid + 临界图型（箱线类）：地板=1 —— 补一句翻译解读。
+    - mid + 临界图型（箱线类 / 高受众图型）：地板=1 —— 补一句翻译解读。
     - mid + 普通图型 / high：地板=0 —— 裸图可读。
     场合（4.1）只能在此地板之上叠加（见 _resolve_level），绝不减到地板以下。
     """
@@ -902,15 +905,21 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
     return save_to
 
 
-# ── orchestrator：一张最优 + 1~2 张候选视角，输出单个 HTML ────────
+def _alternative_item(label_kind, svg):
+    """探索/调试用备选图型。标签保持中性，不暗示未配置的受众档。"""
+    return (f"备选图型 · {label_kind}", svg)
+
+
+# ── orchestrator：按受众交付标准版 primary；备选图仅探索/调试时打开 ────────
 def visualize(df, group_col=None, value_col=None, *, question, insight,
               audience, occasion=None, emphasize=None, hue_col=None, emphasize_hue=None,
-              facet_col=None, chart_kind=None, save_to="chart.html"):
+              facet_col=None, chart_kind=None, show_alternatives=False, save_to="chart.html"):
     """出图主入口。
     group_col=None → 单变量模式（直方图 / 大数字KPI）。
     facet_col     → 小多图（每个 facet 值一个子图）。
     chart_kind    → 手动覆盖路由（scatter / heatmap 必须手传；整数年份折线用 'line'）。
       heatmap 时 hue_col 作为热力图列轴（第二分类维度）。
+    show_alternatives=False → 标准版只交付 primary；True 仅作探索/调试，附中性标签备选图型。
     occasion=None → 标准版（STANDARD_PALETTE + 受众注释地板），第 3 步默认走这条。
     occasion="keynote"/"internal"/"portfolio" → 4.1 精修：换场合配色、把注释往地板之上叠。
     """
@@ -933,53 +942,70 @@ def visualize(df, group_col=None, value_col=None, *, question, insight,
     common = dict(insight=insight, descriptive=descriptive, palette=palette,
                   audience_prof=aud, level=level, emphasize=emphasize)
 
-    # 按 chart_kind 分发（路由已在 _route 定好，这里只取对应图元 + 配一张候选视角）
+    alt_items = []
+
+    # 按 chart_kind 分发（路由已在 _route 定好，这里只取对应图元；备选图仅探索/调试时生成）
     if chart_kind == "grouped_box":
         gcommon = dict(common, emphasize_hue=emphasize_hue)
         primary_svg = grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon)
-        alt_items = [("低受众版 · 分组均值条",
-                      grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "grouped_bar_means",
+                grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon))]
     elif chart_kind == "grouped_bar_means":
         gcommon = dict(common, emphasize_hue=emphasize_hue)
         primary_svg = grouped_bar_means_comparison(df, group_col, value_col, hue_col, **gcommon)
-        alt_items = [("技术版 · 分组箱线",
-                      grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "grouped_box",
+                grouped_box_comparison(df, group_col, value_col, hue_col, **gcommon))]
     elif chart_kind == "rate":
         tech = not aud["downgrade"]   # 技术受众默认带 95% 置信区间，低受众用纯比例条
         primary_svg = rate_comparison(df, group_col, value_col, **common, show_ci=tech)
-        alt_label = "低受众版 · 纯比例条" if tech else "技术版 · 含 95% 置信区间"
-        alt_items = [(alt_label, rate_comparison(df, group_col, value_col, **common, show_ci=not tech))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "rate",
+                rate_comparison(df, group_col, value_col, **common, show_ci=not tech))]
     elif chart_kind == "facet_box":
         primary_svg = facet_box_comparison(df, group_col, value_col, facet_col, **common)
-        alt_items = [("低受众版 · 分面均值条",
-                      facet_bar_means_comparison(df, group_col, value_col, facet_col, **common))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "facet_bar_means",
+                facet_bar_means_comparison(df, group_col, value_col, facet_col, **common))]
     elif chart_kind == "facet_bar_means":
         primary_svg = facet_bar_means_comparison(df, group_col, value_col, facet_col, **common)
-        alt_items = [("技术版 · 分面箱线",
-                      facet_box_comparison(df, group_col, value_col, facet_col, **common))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "facet_box",
+                facet_box_comparison(df, group_col, value_col, facet_col, **common))]
     elif chart_kind == "scatter":
         primary_svg = scatter_regression(df, group_col, value_col, **common, hue_col=hue_col)
-        alt_items = []
     elif chart_kind == "heatmap":
         if hue_col is None:
             raise ValueError("heatmap 需要 hue_col 作为列轴（第二个分类维度）")
         primary_svg = heatmap_comparison(df, group_col, hue_col, value_col, **common)
-        alt_items = []
     elif chart_kind == "line":
         primary_svg = line_trend(df, group_col, value_col, **common, hue_col=hue_col)
-        alt_items = []
     elif chart_kind == "histogram":
         primary_svg = histogram_distribution(df, value_col, **common, hue_col=hue_col)
-        alt_items = [("低受众版 · 大数字KPI", kpi_number(df, value_col, **common))]
+        if show_alternatives:
+            alt_items = [_alternative_item("kpi", kpi_number(df, value_col, **common))]
     elif chart_kind == "kpi":
         primary_svg = kpi_number(df, value_col, **common)
-        alt_items = [("技术版 · 直方图", histogram_distribution(df, value_col, **common, hue_col=hue_col))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "histogram",
+                histogram_distribution(df, value_col, **common, hue_col=hue_col))]
     elif chart_kind == "bar_means":
         primary_svg = bar_means_comparison(df, group_col, value_col, **common)
-        alt_items = [("技术版 · 箱线图", box_comparison(df, group_col, value_col, **common))]
+        if show_alternatives:
+            alt_items = [_alternative_item("box", box_comparison(df, group_col, value_col, **common))]
     else:  # box
         primary_svg = box_comparison(df, group_col, value_col, **common)
-        alt_items = [("低受众版 · 均值条", bar_means_comparison(df, group_col, value_col, **common))]
+        if show_alternatives:
+            alt_items = [_alternative_item(
+                "bar_means",
+                bar_means_comparison(df, group_col, value_col, **common))]
 
     version_label = occ["label"] if occ is not None else "标准版（受众地板）"
     meta = f"受众：{aud['label']} ｜ 版本：{version_label} ｜ 注释档：{level}"

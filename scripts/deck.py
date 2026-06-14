@@ -10,7 +10,7 @@ data-viz-studio · 16:9 演示版式（scripts/deck.py）
 
 四个 bug 的结构性消灭
   1. 标题画两遍    → 每个槽是一个组件，结构上只渲染一次。
-  2. 行距不统一    → 全部 line-height 从 deck-tokens.css 里的具名变量取，零裸值。
+  2. 行距不统一    → 全部 line-height 从 deck-tokens.css 里的具名变量取。
   3. 文字不居中    → flexbox 布局对齐，不手摆坐标。
   4. 文本溢出卡片  → overflow-wrap: break-word + max-width: 100% 每个文本容器都有。
 
@@ -20,7 +20,8 @@ data-viz-studio · 16:9 演示版式（scripts/deck.py）
     - gap_bar   ⟺ 恰好两组对比时
     - mini_bars ⟺ 存在额外分组维度时
 
-token 单一真源：assets/deck-tokens.css（本模块在 render_deck 时内联到 <style>）。
+token 单一真源：assets/deck-tokens.css（本模块在 render_deck 时内联到 <style>）；
+调色板语义色由 render_deck(palette=...) 从 Python palette 注入。
 """
 
 import pathlib
@@ -31,6 +32,19 @@ _ASSETS_DIR = _REPO_ROOT / "assets"
 
 def _load_tokens_css() -> str:
     return (_ASSETS_DIR / "deck-tokens.css").read_text(encoding="utf-8")
+
+
+def _palette_css(palette: dict) -> str:
+    """把 Python palette 注入 deck CSS 变量，保证外壳与内嵌图表同源同色。"""
+    return (
+        ":root {\n"
+        f"  --color-emphasis: {palette['highlight']};\n"
+        f"  --color-muted: {palette['muted']};\n"
+        f"  --color-ink: {palette['ink']};\n"
+        f"  --color-grid: {palette['grid']};\n"
+        f"  --color-accent-bar: {palette['highlight']};\n"
+        "}\n"
+    )
 
 
 # ── 组件渲染函数（每个函数 = 一个槽，结构上只调一次）────────────────────
@@ -104,7 +118,7 @@ def _mini_bars_html(mini_bars: list) -> str:
     return '<div class="mini-bars">' + "".join(rows) + "</div>"
 
 
-# ── 组件样式（引用 token 变量，零裸数值）──────────────────────────────
+# ── 组件样式（行距/字号/间距基准取 token；少量结构尺寸局部定义）────────────
 _COMPONENT_CSS = """
 /* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -375,6 +389,7 @@ def render_deck(
     callout: str,
     chart_svg: str,
     *,
+    palette: dict,
     gap_bar=None,
     mini_bars=None,
     source: str = "",
@@ -385,10 +400,12 @@ def render_deck(
     kpi_cards: [{"label": str, "value": str}, …]
     chart_svg: 由 data-viz_template.py 图型基元产出的 SVG 字符串
                （deck 不重选图型、不另加注释——所有判断已在渲染层完成）。
+    palette: 与 chart_svg 渲染时同一份 palette（如 tmpl.STANDARD_PALETTE）。
     gap_bar=None  → 差距条整块不渲染（不留空壳）。
     mini_bars=None → 迷你条排整块不渲染。
     """
     tokens_css = _load_tokens_css()
+    palette_css = _palette_css(palette)
 
     kpi_html = "".join(_kpi_card_html(c) for c in kpi_cards)
     gap_html = _gap_bar_html(gap_bar) if gap_bar is not None else ""
@@ -410,6 +427,8 @@ def render_deck(
 <style>
 /* ── Token 单一真源（内联自 assets/deck-tokens.css）── */
 {tokens_css}
+/* ── Palette 单一真源（注入自 Python palette）── */
+{palette_css}
 {_COMPONENT_CSS}
 </style>
 </head>
@@ -488,6 +507,7 @@ if __name__ == "__main__":
         ],
         callout=insight_s,
         chart_svg=chart_svg_s,
+        palette=pal,
         gap_bar={
             "groups": ["自选", "调剂"],
             "values": [float(means_s["自选"]), float(means_s["调剂"])],
@@ -524,6 +544,7 @@ if __name__ == "__main__":
         ],
         callout=f"头等舱乘客生还率（{rates_t['1st']:.0%}）是三等舱（{rates_t['3rd']:.0%}）的 {rates_t['1st']/rates_t['3rd']:.1f} 倍，舱位是最强预测因素。",
         chart_svg=chart_svg_t,
+        palette=pal,
         gap_bar={
             "groups": ["1等舱", "3等舱"],
             "values": [float(rates_t["1st"]) * 100, float(rates_t["3rd"]) * 100],
