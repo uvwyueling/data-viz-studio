@@ -1,5 +1,6 @@
 import io
 import re
+import textwrap
 
 import numpy as np
 import pandas as pd
@@ -17,9 +18,22 @@ def _despine(ax, palette):
         ax.spines[s].set_color(palette["ink"])
 
 
+def _wrap_text(text, width=34):
+    """Matplotlib 不会自动给中文长句换行；这里按字符宽度主动断行，避免 SVG 被标题撑宽。"""
+    text = str(text)
+    lines = []
+    for part in text.splitlines() or [""]:
+        if len(part) <= width:
+            lines.append(part)
+        else:
+            lines.extend(textwrap.wrap(part, width=width, break_long_words=True,
+                                       break_on_hyphens=False))
+    return "\n".join(lines)
+
+
 def _title(ax, audience_prof, insight, descriptive, palette):
     text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
-    ax.set_title(text, color=palette["ink"], fontsize=16, fontweight="bold", loc="left", pad=14)
+    ax.set_title(_wrap_text(text), color=palette["ink"], fontsize=16, fontweight="bold", loc="left", pad=14)
 
 
 def _annotate(ax, df, group_col, value_col, emphasize, level, palette):
@@ -423,7 +437,7 @@ def kpi_number(df, value_col, *, insight, descriptive,
             ha="center", va="center", fontsize=11, color=palette["muted"])
     # 一句结论（level >= 1 = 低受众必有）
     if level >= 1 and insight:
-        fig.text(0.5, 0.02, insight, ha="center", fontsize=10,
+        fig.text(0.5, 0.02, _wrap_text(insight, width=38), ha="center", fontsize=10,
                  color=palette["ink"], fontweight="bold")
 
     return _fig_to_svg(fig)
@@ -471,7 +485,7 @@ def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descri
         axes_flat[j].set_visible(False)
 
     title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
-    fig.suptitle(title_text, color=palette["ink"], fontsize=14, fontweight="bold")
+    fig.suptitle(_wrap_text(title_text, width=44), color=palette["ink"], fontsize=14, fontweight="bold")
     if level >= 1:
         fig.text(0.5, 0.01, _READING_GUIDE["facet_box"], ha="center", fontsize=9,
                  color=palette["muted"], fontweight="normal")
@@ -520,9 +534,9 @@ def facet_bar_means_comparison(df, group_col, value_col, facet_col, *, insight, 
         axes_flat[j].set_visible(False)
 
     title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
-    fig.suptitle(title_text, color=palette["ink"], fontsize=14, fontweight="bold")
+    fig.suptitle(_wrap_text(title_text, width=44), color=palette["ink"], fontsize=14, fontweight="bold")
     if level >= 1:
-        fig.text(0.5, 0.01, insight, ha="center", fontsize=11,
+        fig.text(0.5, 0.01, _wrap_text(insight, width=44), ha="center", fontsize=11,
                  color=palette["highlight"], fontweight="bold")
     fig.tight_layout()
     return _fig_to_svg(fig)

@@ -9,6 +9,7 @@ ROOT = pathlib.Path(__file__).parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import dataviz as tmpl
+from scripts.deck import render_deck
 
 
 def assert_floor_contract():
@@ -146,9 +147,61 @@ def assert_visualize_initializes_cjk_font():
     assert "-5206" in svg or "-8c03" in svg or "-81ea" in svg
 
 
+def assert_deck_strips_audience_badges_and_wraps_callout():
+    out = ROOT / "__test__" / "deck_text_guard.html"
+    long_callout = (
+        "主动选择组均值GPA比被动调剂组高0.76分，差距在分流前已经显现，"
+        "这是一句故意写得很长的数据洞察，用来验证low/mid/high三类deck的callout都能在容器内自然换行。"
+    )
+    render_deck(
+        title="文本防护测试",
+        subtitle="2015–2018 级学生分流数据 · 基础型受众版（箱线图 + 阅读指引） · 标准版",
+        kpi_cards=[{"label": "样本量", "value": "120"}],
+        callout=long_callout,
+        chart_svg="<svg viewBox='0 0 10 10'></svg>",
+        palette=tmpl.STANDARD_PALETTE,
+        save_to=str(out),
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "受众版" not in html
+    assert "基础型" not in html
+    assert '<span class="callout__text">' in html
+    assert "word-break: break-word;" in html
+    assert "line-break: anywhere;" in html
+
+
+def assert_chart_title_wraps_long_insight():
+    out = ROOT / "__test__" / "long_insight_wrap.html"
+    long_insight = (
+        "主动选择组中位GPA比被动调剂高0.79分，两组箱体几乎不重叠，"
+        "差距在分流前已系统性显现；Mann-Whitney检验p小于0.001，说明两组分布差异显著。"
+    )
+    df = pd.DataFrame({
+        "分组": ["主动选择"] * 8 + ["被动调剂"] * 8,
+        "分流前_平均学分绩点": [3.6, 3.7, 3.4, 3.8, 3.5, 3.9, 3.3, 3.6,
+                               2.8, 2.7, 3.0, 2.9, 2.6, 3.1, 2.5, 2.8],
+    })
+    tmpl.visualize(
+        df, "分组", "分流前_平均学分绩点",
+        question="主动选择 vs 被动调剂：分流前平均学分绩点对比",
+        insight=long_insight,
+        audience="mid",
+        emphasize="被动调剂",
+        save_to=str(out),
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "主动选择组中位GPA比被动调剂高0.79分，两组箱体几乎不重叠，差距" in html
+    assert "在分流前已系统性显现；Mann-Whitney检验p小于0.001，" in html
+    view_box = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', html)
+    assert view_box is not None
+    assert float(view_box.group(1)) < 700
+
+
 if __name__ == "__main__":
     assert_floor_contract()
     assert_route_contract()
     assert_integrated_floor_for_reachable_routes()
     assert_visualize_initializes_cjk_font()
+    assert_deck_strips_audience_badges_and_wraps_callout()
+    assert_chart_title_wraps_long_insight()
     print("test_routing_and_floor ok")

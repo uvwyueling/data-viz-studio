@@ -25,6 +25,7 @@ token 单一真源：assets/deck-tokens.css（本模块在 render_deck 时内联
 """
 
 import pathlib
+import re
 
 _REPO_ROOT = pathlib.Path(__file__).parent.parent
 _ASSETS_DIR = _REPO_ROOT / "assets"
@@ -45,6 +46,23 @@ def _palette_css(palette: dict) -> str:
         f"  --color-accent-bar: {palette['highlight']};\n"
         "}\n"
     )
+
+
+_AUDIENCE_BADGES_RE = re.compile(
+    r"\s*[·｜|/-]\s*"
+    r"(?:(?:低|中|高|基础|进阶|高阶|基础型|进阶型|高阶型|low|mid|high)\s*)?受众版"
+    r"(?:（[^）]*）|\([^)]*\))?"
+)
+
+
+def _strip_audience_badge(text: str) -> str:
+    """Deck 对外成品不显示内部受众档标签。"""
+    text = str(text)
+    prev = None
+    while prev != text:
+        prev = text
+        text = _AUDIENCE_BADGES_RE.sub("", text)
+    return text.strip(" ·｜|/-")
 
 
 # ── 组件渲染函数（每个函数 = 一个槽，结构上只调一次）────────────────────
@@ -167,7 +185,10 @@ _COMPONENT_CSS = """
   line-height: var(--lh-base);
   color: var(--color-muted);
   margin-top: var(--sp-1);
+  min-width: 0;
   overflow-wrap: break-word;
+  word-break: break-word;
+  line-break: anywhere;
   max-width: 100%;
 }
 
@@ -188,6 +209,7 @@ _COMPONENT_CSS = """
   gap: var(--sp-3);
   flex-wrap: wrap;
   align-items: flex-start;
+  flex-shrink: 0;
 }
 
 /* ── KPI 卡（组件渲染一次）── */
@@ -219,6 +241,7 @@ _COMPONENT_CSS = """
 /* ── Callout（核心发现，一句话）── */
 .callout {
   flex: 1;
+  min-width: 0;
   background: var(--color-surface-2);
   border-left: 3px solid var(--color-emphasis);
   border-radius: 0 var(--card-radius) var(--card-radius) 0;
@@ -227,9 +250,21 @@ _COMPONENT_CSS = """
   line-height: var(--lh-base);
   color: var(--color-ink);
   overflow-wrap: break-word;
+  word-break: break-word;
+  line-break: anywhere;
+  white-space: normal;
   max-width: 100%;
   display: flex;
   align-items: center;
+}
+.callout__text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-break: anywhere;
+  white-space: normal;
 }
 
 /* ── 图表 + 可选槽行 ── */
@@ -404,6 +439,7 @@ def render_deck(
     gap_bar=None  → 差距条整块不渲染（不留空壳）。
     mini_bars=None → 迷你条排整块不渲染。
     """
+    subtitle = _strip_audience_badge(subtitle)
     tokens_css = _load_tokens_css()
     palette_css = _palette_css(palette)
 
@@ -443,7 +479,7 @@ def render_deck(
     <div class="divider" role="separator"></div>
     <div class="deck__summary">
       <div class="deck__kpi-row">{kpi_html}</div>
-      <div class="callout" role="note">{callout}</div>
+      <div class="callout" role="note"><span class="callout__text">{callout}</span></div>
     </div>
     <div class="deck__content">
       <div class="chart-block">{chart_svg}</div>
@@ -494,7 +530,7 @@ if __name__ == "__main__":
 
     out1 = render_deck(
         title="自选 vs 调剂：首年学业表现有差距吗？",
-        subtitle="2024届新生模拟数据 · 低受众版 · 标准版",
+        subtitle="2024届新生模拟数据 · 标准版",
         kpi_cards=[
             {"label": "自选均值 GPA", "value": f"{means_s['自选']:.2f}"},
             {"label": "调剂均值 GPA", "value": f"{means_s['调剂']:.2f}"},
@@ -531,7 +567,7 @@ if __name__ == "__main__":
 
     out2 = render_deck(
         title="舱位等级与生还率：差距有多大？",
-        subtitle="泰坦尼克号乘客数据 · 低受众版 · 标准版",
+        subtitle="泰坦尼克号乘客数据 · 标准版",
         kpi_cards=[
             {"label": "1等舱生还率", "value": f"{rates_t['1st']:.0%}"},
             {"label": "2等舱生还率", "value": f"{rates_t['2nd']:.0%}"},
