@@ -26,7 +26,7 @@ def _annotate(ax, df, group_col, value_col, emphasize, level, palette):
         return
     means = df.groupby(group_col)[value_col].mean()
     gap = means.max() - means.min()
-    ax.annotate(f"↓ {emphasize}组平均低约 {gap:.2f}",
+    ax.annotate(f"{emphasize}组平均低约 {gap:.2f}",
                 xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
                 color=palette["highlight"], fontsize=12, fontweight="bold")
     if level >= 2:  # 叙事档：把每组均值直接标到图上
@@ -46,6 +46,52 @@ def _fig_to_svg(fig):
     svg = re.sub(r'(<svg[^>]*?)\s+width="[\d.]+pt"\s+height="[\d.]+pt"',
                  r"\1", svg, count=1)                   # 去掉固定 pt 宽高，靠 viewBox + CSS 自适应
     return svg
+
+
+def _clip_boxplot_view(ax, grouped_values, palette, *, annotate=None):
+    """偏态/离群点过多时夹到须线范围附近，并无条件标注被移出视野的离群点。"""
+    groups = [np.asarray(values, dtype=float) for values in grouped_values]
+    groups = [values[np.isfinite(values)] for values in groups if len(values)]
+    groups = [values for values in groups if len(values)]
+    if not groups:
+        return False
+
+    all_values = np.concatenate(groups)
+    actual_lo, actual_hi = float(all_values.min()), float(all_values.max())
+    actual_span = actual_hi - actual_lo
+    whisker_lows, whisker_highs = [], []
+    outlier_count = 0
+    for values in groups:
+        q1, q3 = np.percentile(values, [25, 75])
+        iqr = q3 - q1
+        lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        whisker_lows.append(lo)
+        whisker_highs.append(hi)
+        outlier_count += int(((values < lo) | (values > hi)).sum())
+
+    w_lo, w_hi = min(whisker_lows), max(whisker_highs)
+    whisker_span = w_hi - w_lo
+    if whisker_span <= 0:
+        return False
+    outlier_ratio = outlier_count / len(all_values)
+    if actual_span <= 3 * whisker_span and outlier_ratio <= 0.05:
+        return False
+
+    margin = whisker_span * 0.08
+    view_lo, view_hi = w_lo - margin, w_hi + margin
+    hidden_count = int(((all_values < view_lo) | (all_values > view_hi)).sum())
+    if hidden_count <= 0:
+        return False
+
+    ax.set_ylim(view_lo, view_hi)
+    note = f"另有 {hidden_count} 个离群点超出显示范围（实际范围 [{actual_lo:g}, {actual_hi:g}]）"
+    if annotate is None:
+        ax.annotate(r"$\blacktriangle$ " + note,
+                    xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
+                    color=palette["ink"], fontsize=9)
+    else:
+        annotate(r"$\blacktriangle$ " + note)
+    return True
 
 
 # ── 图型基元（返回 SVG 字符串）──────────────────────────────────
@@ -70,6 +116,7 @@ def box_comparison(df, group_col, value_col, *, insight, descriptive,
     ax.set_ylabel(value_col, color=palette["ink"]); ax.tick_params(colors=palette["ink"])
     _title(ax, audience_prof, insight, descriptive, palette)
     _annotate(ax, df, group_col, value_col, emphasize, level, palette)
+    _clip_boxplot_view(ax, data, palette)
     return _fig_to_svg(fig)
 
 
@@ -89,7 +136,7 @@ def bar_means_comparison(df, group_col, value_col, *, insight, descriptive,
         ax.annotate(f"{m:.2f}", xy=(i, tops[i]), xytext=(0, 6), textcoords="offset points",
                     ha="center", color=palette["ink"], fontsize=11, fontweight="bold")
     _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
-    ax.set_ylabel(f"{value_col}（均值 ± 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    ax.set_ylabel(f"{value_col}（均值 $\\pm$ 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
     _title(ax, audience_prof, insight, descriptive, palette)
     _annotate(ax, df, group_col, value_col, emphasize, level, palette)
     return _fig_to_svg(fig)
@@ -112,7 +159,7 @@ def _annotate_rate(ax, rates, labels, emphasize, level, palette):
     gap_pp = (max(rates) - dict(zip(labels, rates))[emphasize]) * 100
     if gap_pp < 1:   # 被强调的恰好是最高组，没有"低多少"可说
         return
-    ax.annotate(f"↓ {emphasize} 比最高组低约 {gap_pp:.0f} 个百分点",
+    ax.annotate(f"{emphasize} 比最高组低约 {gap_pp:.0f} 个百分点",
                 xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
                 color=palette["highlight"], fontsize=12, fontweight="bold")
 
@@ -178,12 +225,14 @@ def grouped_box_comparison(df, group_col, value_col, hue_col, *, insight, descri
     hues = sorted(df[hue_col].dropna().unique())
     colors = _series_colors(palette, hues, emphasize_hue)
     n_h = len(hues); width = 0.8 / max(1, n_h)
+    all_data = []
 
     fig, ax = plt.subplots(figsize=(7.5, 5))
     for hi, hue in enumerate(hues):
         positions = _grouped_positions(len(groups), hi, n_h, width)
         data = [df[(df[group_col] == g) & (df[hue_col] == hue)][value_col].dropna().values
                 for g in groups]
+        all_data.extend(data)
         bp = ax.boxplot(data, positions=positions, widths=width * 0.9, patch_artist=True,
                         medianprops=dict(color=palette["ink"], linewidth=1.5),
                         whiskerprops=dict(color=palette["ink"]),
@@ -199,6 +248,7 @@ def grouped_box_comparison(df, group_col, value_col, hue_col, *, insight, descri
     ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
               title=hue_col, frameon=False, loc="best")
     _title(ax, audience_prof, insight, descriptive, palette)
+    _clip_boxplot_view(ax, all_data, palette)
     return _fig_to_svg(fig)
 
 
@@ -228,7 +278,7 @@ def grouped_bar_means_comparison(df, group_col, value_col, hue_col, *, insight, 
 
     ax.set_xticks(range(len(groups))); ax.set_xticklabels(groups)
     _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
-    ax.set_ylabel(f"{value_col}（均值 ± 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    ax.set_ylabel(f"{value_col}（均值 $\\pm$ 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
     ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
               title=hue_col, frameon=False, loc="best")
     _title(ax, audience_prof, insight, descriptive, palette)
@@ -380,12 +430,14 @@ def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descri
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.8 * nrows),
                              sharey=True, squeeze=False)
     axes_flat = axes.flatten()
+    all_grouped = []
 
     for i, facet in enumerate(facets):
         ax = axes_flat[i]
         sub = df[df[facet_col] == facet]
         grouped = [(g, v.dropna().values) for g, v in sub.groupby(group_col)[value_col]]
         labels, data = zip(*grouped) if grouped else ([], [])
+        all_grouped.extend(data)
         bp = ax.boxplot(list(data), tick_labels=list(labels), patch_artist=True, widths=0.5,
                         medianprops=dict(color=palette["ink"], linewidth=1.5),
                         whiskerprops=dict(color=palette["ink"]),
@@ -411,6 +463,10 @@ def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descri
     if level >= 1:
         fig.text(0.5, 0.01, insight, ha="center", fontsize=11,
                  color=palette["highlight"], fontweight="bold")
+    _clip_boxplot_view(
+        axes_flat[0], all_grouped, palette,
+        annotate=lambda note: fig.text(0.5, -0.025, note, ha="center", fontsize=9, color=palette["ink"]),
+    )
     fig.tight_layout()
     return _fig_to_svg(fig)
 
@@ -461,7 +517,7 @@ def facet_bar_means_comparison(df, group_col, value_col, facet_col, *, insight, 
 
 
 def _draw_regression(ax, x, y, color, level, row_offset=0):
-    """画回归线；level >= 1 时标注 R² 和方向（row_offset 用于多系列避免标注重叠）。"""
+    """画回归线；level >= 1 时标注 R^2 和方向（row_offset 用于多系列避免标注重叠）。"""
     x = np.asarray(x, float); y = np.asarray(y, float)
     mask = np.isfinite(x) & np.isfinite(y)
     x, y = x[mask], y[mask]
@@ -476,7 +532,7 @@ def _draw_regression(ax, x, y, color, level, row_offset=0):
         ss_tot = ((y - y.mean()) ** 2).sum()
         r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
         direction = "正相关" if m > 0 else "负相关"
-        ax.annotate(f"{direction}，R²={r2:.2f}",
+        ax.annotate(f"{direction}，$R^2$={r2:.2f}",
                     xy=(0.04, 0.93 - row_offset * 0.09), xycoords="axes fraction",
                     color=color, fontsize=10, fontweight="bold")
 
@@ -553,4 +609,3 @@ def heatmap_comparison(df, row_col, col_col, value_col, *, insight, descriptive,
     _title(ax, audience_prof, insight, descriptive, palette)
     fig.tight_layout()
     return _fig_to_svg(fig)
-

@@ -28,6 +28,10 @@ def assert_svg_paths_only(html_path):
         raise AssertionError(f"svg contains no <path>: {html_path}")
 
 
+def html_text(html_path):
+    return pathlib.Path(html_path).read_text(encoding="utf-8")
+
+
 def save_primary_svg(html_path, svg_path):
     svg_path.write_text(embedded_svg(html_path), encoding="utf-8")
 
@@ -49,12 +53,17 @@ def render_case(name, df, audience, expected_kind, **kwargs):
     assert result["chart_kind"] == expected_kind, (name, result)
     assert result["annotation_level"] == expected_floor(audience, expected_kind), (name, result)
     assert_svg_paths_only(save_to)
+    text = html_text(save_to)
+    assert "受众：" not in text and "注释档：" not in text, name
     print(f"ok {name}: {result['chart_kind']} level={result['annotation_level']}")
     return save_to, result
 
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    for old in OUT.glob("*"):
+        if old.suffix in {".html", ".svg"}:
+            old.unlink()
     tmpl.setup_cjk_font()
 
     superstore = tmpl.load_dataframe(ROOT / "__test__" / "superstore_zh.xlsx")
@@ -73,11 +82,12 @@ def main():
         group_col="最终专业", value_col="分流前_平均学分绩点",
         insight="不同最终专业的分流前 GPA 有差异", emphasize="视觉传达设计",
     )
-    render_case(
-        "superstore_high_box", ss_small, "high", "box",
-        group_col="区域", value_col="Sales",
-        insight="各区域销售额分布不同", emphasize="西部",
+    profit_box, _ = render_case(
+        "superstore_profit_box_clipped", ss_small, "high", "box",
+        group_col="区域", value_col="Profit",
+        insight="各区域利润分布不同", emphasize="西部",
     )
+    assert "离群点超出显示范围" in html_text(profit_box)
     render_case(
         "superstore_low_grouped_bar", ss_small, "low", "grouped_bar_means",
         group_col="区域", value_col="Sales", hue_col="类别",
@@ -93,11 +103,12 @@ def main():
         group_col="最终专业", value_col="分流前_平均学分绩点", facet_col="年级",
         insight="按年级分面后仍能比较 GPA",
     )
-    render_case(
+    gpa_box, _ = render_case(
         "stage_high_facet_box", stage_small, "high", "facet_box",
         group_col="最终专业", value_col="分流前_平均学分绩点", facet_col="年级",
         insight="按年级分面后仍能比较 GPA",
     )
+    assert "离群点超出显示范围" not in html_text(gpa_box)
     render_case(
         "superstore_mid_histogram", ss_small, "mid", "histogram",
         group_col=None, value_col="Profit",
@@ -153,21 +164,25 @@ def main():
         (
             "heatmap",
             dict(group_col="区域", hue_col="类别", value_col="Sales", chart_kind="heatmap",
-                 insight="区域 × 类别的平均销售额不同"),
+                 insight="区域 x 类别的平均销售额不同"),
             "heatmap",
         ),
         (
             "box",
-            dict(group_col="区域", value_col="Sales", insight="各区域销售额分布不同"),
+            dict(group_col="最终专业", value_col="分流前_平均学分绩点",
+                 insight="不同最终专业的分流前 GPA 有差异"),
             "box",
         ),
     ]
     for stem, kwargs, kind in comparisons:
         for audience in ["mid", "high"]:
             html, _ = render_case(
-                f"{stem}_{audience}", ss_small, audience, kind,
+                f"{stem}_{audience}", stage_small if stem == "box" else ss_small, audience, kind,
                 question=f"{stem} {audience}", **kwargs,
             )
+            if stem == "scatter":
+                text = html_text(html)
+                assert "R²" not in text and "☒" not in text
             save_primary_svg(html, OUT / f"{stem}_{audience}.svg")
 
     print(f"gallery ok: {OUT}")

@@ -3,6 +3,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
+# 外框化只保证字体已有的字形；数学/特殊符号请用 mathtext 或 ASCII，勿直接写 ²³μ± 等字符。
 
 # ── 0. 中文字体守卫 + SVG 字形外框化（头号翻车点，HTML 版）──────────
 _CJK_PROBE = "中"  # 拿这个字去探：某字体到底有没有中文字形（不靠字体名，靠真查字形表）
@@ -89,5 +90,4 @@ def setup_cjk_font():
     # 中文永远按路径渲染——HTML 世界里的 □□□ 风险被结构性根除。
     plt.rcParams["svg.fonttype"] = "path"
     return chosen
-
 

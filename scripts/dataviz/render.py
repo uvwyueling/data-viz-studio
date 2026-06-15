@@ -1,10 +1,12 @@
 # ── HTML 外壳：把 SVG 内嵌成一个自包含页面 ──────────────────────
-def render_html(title, meta, primary_svg, alt_items, save_to):
+def render_html(title, meta=None, primary_svg=None, alt_items=None, save_to="chart.html", show_meta=False):
     """alt_items: [(说明, svg), ...]。生成一个不依赖任何外部资源的 .html。"""
+    alt_items = alt_items or []
     alts = ""
     for label, svg in alt_items:
         alts += f'<section class="alt"><h3>{label}</h3><div class="chart">{svg}</div></section>'
     alts_block = f'<div class="alts"><h2>其他视角</h2>{alts}</div>' if alt_items else ""
+    meta_block = f'<p class="meta">{meta}</p>' if show_meta else ""
     html = f"""<!doctype html>
 <html lang="zh">
 <head>
@@ -25,7 +27,7 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
 </head>
 <body>
   <h1>{title}</h1>
-  <p class="meta">{meta}</p>
+  {meta_block}
   <div class="primary chart">{primary_svg}</div>
   {alts_block}
 </body>
@@ -38,5 +40,3 @@ def render_html(title, meta, primary_svg, alt_items, save_to):
 def _alternative_item(label_kind, svg):
     """探索/调试用备选图型。标签保持中性，不暗示未配置的受众档。"""
     return (f"备选图型 · {label_kind}", svg)
-
-

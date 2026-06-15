@@ -16,13 +16,15 @@ def _alternative_item(label_kind, svg):
 # ── orchestrator：按受众交付标准版 primary；备选图仅探索/调试时打开 ────────
 def visualize(df, group_col=None, value_col=None, *, question, insight,
               audience, occasion=None, emphasize=None, hue_col=None, emphasize_hue=None,
-              facet_col=None, chart_kind=None, show_alternatives=False, save_to="chart.html"):
+              facet_col=None, chart_kind=None, show_alternatives=False, show_meta=False,
+              save_to="chart.html"):
     """出图主入口。
     group_col=None → 单变量模式（直方图 / 大数字KPI）。
     facet_col     → 小多图（每个 facet 值一个子图）。
     chart_kind    → 手动覆盖路由（scatter / heatmap 必须手传；整数年份折线用 'line'）。
       heatmap 时 hue_col 作为热力图列轴（第二分类维度）。
     show_alternatives=False → 标准版只交付 primary；True 仅作探索/调试，附中性标签备选图型。
+    show_meta=False → 交付物不显示内部受众/版本/注释档；True 仅作调试。
     occasion=None → 标准版（STANDARD_PALETTE + 受众注释地板），第 3 步默认走这条。
     occasion="keynote"/"internal"/"portfolio" → 4.1 精修：换场合配色、把注释往地板之上叠。
     """
@@ -45,7 +47,7 @@ def visualize(df, group_col=None, value_col=None, *, question, insight,
     elif facet_col:
         descriptive = f"各{group_col} 按 {facet_col} 分面的{value_col}对比"
     elif hue_col:
-        descriptive = f"各{group_col} × {hue_col} 的{value_col}分布"
+        descriptive = f"各{group_col} x {hue_col} 的{value_col}分布"
     else:
         descriptive = f"各{group_col}的{value_col}对比"
 
@@ -119,8 +121,10 @@ def visualize(df, group_col=None, value_col=None, *, question, insight,
 
     version_label = occ["label"] if occ is not None else "标准版（受众地板）"
     meta = f"受众：{aud['label']} ｜ 版本：{version_label} ｜ 注释档：{level}"
-    path = render_html(title=question, meta=meta,
-                       primary_svg=primary_svg, alt_items=alt_items, save_to=save_to)
+    render_kwargs = dict(title=question, primary_svg=primary_svg,
+                         alt_items=alt_items, save_to=save_to)
+    if show_meta:
+        render_kwargs.update(meta=meta, show_meta=True)
+    path = render_html(**render_kwargs)
     return {"html": path, "annotation_level": level, "chart_kind": chart_kind,
             "version": version_label, "audience": aud["label"]}
-
