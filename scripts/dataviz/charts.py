@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from .config import _READING_GUIDE
+from .fonts import setup_cjk_font
 from .routing import _looks_like_rate
 
 
@@ -45,6 +46,7 @@ def _reading_guide(ax, chart_kind, palette, y=-0.26):
 
 def _fig_to_svg(fig):
     """把 matplotlib 图存成可内嵌、可自适应的 SVG 字符串。"""
+    setup_cjk_font()
     buf = io.StringIO()
     fig.savefig(buf, format="svg", bbox_inches="tight")
     plt.close(fig)

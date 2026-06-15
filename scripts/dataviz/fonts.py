@@ -21,6 +21,8 @@ _KNOWN_CJK_FILES = [
     "C:/Windows/Fonts/simhei.ttf",
 ]
 
+_CACHED_CJK_FONT = None
+
 
 def _has_cjk_glyph(font_path):
     """这个字体文件里到底有没有中文字形？不信字体名，直接查字形表。"""
@@ -65,6 +67,13 @@ def _register_known_cjk():
 
 
 def setup_cjk_font():
+    global _CACHED_CJK_FONT
+    if _CACHED_CJK_FONT is not None:
+        plt.rcParams["font.sans-serif"] = [_CACHED_CJK_FONT]
+        plt.rcParams["axes.unicode_minus"] = False
+        plt.rcParams["svg.fonttype"] = "path"
+        return _CACHED_CJK_FONT
+
     # 1) 先试"指名道姓"的常用中文字体：命中最稳，渲染质量也可控
     preferred = ["Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
                  "Heiti SC", "STHeiti", "Hiragino Sans GB", "Arial Unicode MS",
@@ -83,6 +92,7 @@ def setup_cjk_font():
     if chosen is None:
         raise RuntimeError("未找到可用中文字体，请先安装 CJK 字体；宁可报错也不要静默输出 □□□。")
 
+    _CACHED_CJK_FONT = chosen
     plt.rcParams["font.sans-serif"] = [chosen]
     plt.rcParams["axes.unicode_minus"] = False
     # 关键：把 SVG 里的文字转成矢量路径（path），而不是留作依赖字体的 <text>。
@@ -90,4 +100,3 @@ def setup_cjk_font():
     # 中文永远按路径渲染——HTML 世界里的 □□□ 风险被结构性根除。
     plt.rcParams["svg.fonttype"] = "path"
     return chosen
-

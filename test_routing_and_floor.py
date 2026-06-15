@@ -1,4 +1,5 @@
 import pathlib
+import re
 import sys
 
 import pandas as pd
@@ -124,8 +125,30 @@ def assert_integrated_floor_for_reachable_routes():
         assert got == expected, (audience, kind, got, expected)
 
 
+def assert_visualize_initializes_cjk_font():
+    out = ROOT / "__test__" / "font_guard_visualize.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame({
+        "分组": ["自选", "自选", "调剂", "调剂"],
+        "首年GPA": [3.6, 3.4, 2.8, 2.7],
+    })
+    tmpl.visualize(
+        df, "分组", "首年GPA",
+        question="主动选择 vs 被动调剂的学生，分流前平均学分绩点有何差异？",
+        insight="调剂学生分流前平均学分绩点更低",
+        audience="low",
+        emphasize="调剂",
+        save_to=str(out),
+    )
+    html = out.read_text(encoding="utf-8")
+    svg = re.search(r"(<svg\b.*?</svg>)", html, flags=re.S).group(1)
+    assert "<text" not in svg
+    assert "-5206" in svg or "-8c03" in svg or "-81ea" in svg
+
+
 if __name__ == "__main__":
     assert_floor_contract()
     assert_route_contract()
     assert_integrated_floor_for_reachable_routes()
+    assert_visualize_initializes_cjk_font()
     print("test_routing_and_floor ok")

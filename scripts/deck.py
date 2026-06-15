@@ -128,7 +128,7 @@ _COMPONENT_CSS = """
   width: var(--canvas-w);
   height: var(--canvas-h);
   background: var(--color-surface-0);
-  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
   color: var(--color-ink);
   display: flex;
   flex-direction: row;

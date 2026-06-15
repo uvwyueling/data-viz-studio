@@ -17,7 +17,7 @@ def render_html(title, meta=None, primary_svg=None, alt_items=None, save_to="cha
 <style>
   *{{box-sizing:border-box;}}
   body{{margin:0 auto;max-width:880px;padding:32px 20px;background:#fff;color:#222;
-       font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+       font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;}}
   h1{{font-size:20px;margin:0 0 4px;}}
   .meta{{color:#666;font-size:13px;margin:0 0 24px;}}
   .chart svg{{width:100%;height:auto;display:block;}}
