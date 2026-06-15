@@ -13,7 +13,7 @@ def main():
         "首年GPA": np.concatenate([rng.normal(3.2, 0.40, 60),
                                    rng.normal(2.7, 0.45, 60)]).clip(0, 4),
     })
-    insight = "调剂学生首年GPA显著更低"  # 真实调用里由 Claude 的 EDA 步产出
+    insight = "调剂学生首年GPA显著更低"  # 真实调用里由 Codex / 当前模型的 EDA 步产出
 
     # 案例1 · 标准版（low）：不传 occasion → STANDARD_PALETTE + 受众地板（均值条 + 直接标注 + 结论）
     r1 = visualize(df, "分组", "首年GPA",
