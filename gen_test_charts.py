@@ -36,6 +36,10 @@ def save_primary_svg(html_path, svg_path):
     svg_path.write_text(embedded_svg(html_path), encoding="utf-8")
 
 
+def count_text(html_path, needle):
+    return html_text(html_path).count(needle)
+
+
 def expected_floor(audience, chart_kind):
     return tmpl._annotation_floor(audience, chart_kind)
 
@@ -178,11 +182,21 @@ def main():
         for audience in ["mid", "high"]:
             html, _ = render_case(
                 f"{stem}_{audience}", stage_small if stem == "box" else ss_small, audience, kind,
-                question=f"{stem} {audience}", **kwargs,
+                question="", **kwargs,
             )
+            text = html_text(html)
+            assert "<h1>" not in text
+            assert f"{stem} {audience}" not in text
             if stem == "scatter":
-                text = html_text(html)
                 assert "R²" not in text and "☒" not in text
+            if stem == "box":
+                guide = tmpl._READING_GUIDE["box"]
+                assert count_text(html, guide) == (1 if audience == "mid" else 0)
+            if stem == "heatmap":
+                guide = tmpl._READING_GUIDE["heatmap"]
+                assert count_text(html, guide) == (1 if audience == "mid" else 0)
+                if audience == "mid":
+                    assert count_text(html, kwargs["insight"]) == 1
             save_primary_svg(html, OUT / f"{stem}_{audience}.svg")
 
     print(f"gallery ok: {OUT}")

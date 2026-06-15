@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from .config import _READING_GUIDE
 from .routing import _looks_like_rate
 
 
@@ -34,6 +35,12 @@ def _annotate(ax, df, group_col, value_col, emphasize, level, palette):
             ax.annotate(f"{m:.2f}", xy=(i, m), xytext=(0, 8),
                         textcoords="offset points", ha="center",
                         color=palette["ink"], fontsize=10)
+
+
+def _reading_guide(ax, chart_kind, palette, y=-0.26):
+    ax.annotate(_READING_GUIDE[chart_kind],
+                xy=(0.5, y), xycoords="axes fraction", ha="center",
+                color=palette["muted"], fontsize=9, fontweight="normal")
 
 
 def _fig_to_svg(fig):
@@ -115,7 +122,8 @@ def box_comparison(df, group_col, value_col, *, insight, descriptive,
     _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
     ax.set_ylabel(value_col, color=palette["ink"]); ax.tick_params(colors=palette["ink"])
     _title(ax, audience_prof, insight, descriptive, palette)
-    _annotate(ax, df, group_col, value_col, emphasize, level, palette)
+    if level >= 1:
+        _reading_guide(ax, "box", palette)
     _clip_boxplot_view(ax, data, palette)
     return _fig_to_svg(fig)
 
@@ -248,6 +256,8 @@ def grouped_box_comparison(df, group_col, value_col, hue_col, *, insight, descri
     ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
               title=hue_col, frameon=False, loc="best")
     _title(ax, audience_prof, insight, descriptive, palette)
+    if level >= 1:
+        _reading_guide(ax, "grouped_box", palette)
     _clip_boxplot_view(ax, all_data, palette)
     return _fig_to_svg(fig)
 
@@ -461,8 +471,8 @@ def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descri
     title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
     fig.suptitle(title_text, color=palette["ink"], fontsize=14, fontweight="bold")
     if level >= 1:
-        fig.text(0.5, 0.01, insight, ha="center", fontsize=11,
-                 color=palette["highlight"], fontweight="bold")
+        fig.text(0.5, 0.01, _READING_GUIDE["facet_box"], ha="center", fontsize=9,
+                 color=palette["muted"], fontweight="normal")
     _clip_boxplot_view(
         axes_flat[0], all_grouped, palette,
         annotate=lambda note: fig.text(0.5, -0.025, note, ha="center", fontsize=9, color=palette["ink"]),
@@ -602,10 +612,8 @@ def heatmap_comparison(df, row_col, col_col, value_col, *, insight, descriptive,
     cbar.ax.tick_params(colors=palette["ink"], labelsize=9)
     cbar.set_label(value_col, color=palette["ink"], fontsize=10)
 
-    if level >= 1 and insight:
-        ax.annotate(insight, xy=(0.5, -0.2), xycoords="axes fraction", ha="center",
-                    color=palette["highlight"], fontsize=11, fontweight="bold")
-
     _title(ax, audience_prof, insight, descriptive, palette)
+    if level >= 1:
+        _reading_guide(ax, "heatmap", palette, y=-0.32)
     fig.tight_layout()
     return _fig_to_svg(fig)

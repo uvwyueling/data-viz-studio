@@ -17,6 +17,7 @@ def assert_floor_contract():
         "line", "rate", "kpi",
     ]
     assert tmpl._BORDERLINE_FOR_MID == {"box", "grouped_box", "facet_box", "scatter", "heatmap"}
+    assert set(tmpl._READING_GUIDE) == tmpl._BORDERLINE_FOR_MID
     assert "histogram" not in tmpl._BORDERLINE_FOR_MID
 
     for kind in kinds:

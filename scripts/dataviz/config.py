@@ -45,4 +45,12 @@ AUDIENCE_PROFILES = {
 # high 受众任何图机制天然返回 0，无需登记。
 _BORDERLINE_FOR_MID = {"box", "grouped_box", "facet_box", "scatter", "heatmap"}
 
+_READING_GUIDE = {
+    "box": "箱体=中间50%的数据，黑线=中位数，上下须=典型范围",
+    "grouped_box": "箱体=中间50%的数据，黑线=中位数，上下须=典型范围",
+    "facet_box": "箱体=中间50%的数据，黑线=中位数，上下须=典型范围",
+    "scatter": "每个点是一条记录，看点云整体走向判断关系",
+    "heatmap": "颜色越深=平均值越大，格子里的数字是具体均值",
+}
+
 ANNOTATE_MAX = 2

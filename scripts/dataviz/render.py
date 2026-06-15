@@ -7,6 +7,7 @@ def render_html(title, meta=None, primary_svg=None, alt_items=None, save_to="cha
         alts += f'<section class="alt"><h3>{label}</h3><div class="chart">{svg}</div></section>'
     alts_block = f'<div class="alts"><h2>其他视角</h2>{alts}</div>' if alt_items else ""
     meta_block = f'<p class="meta">{meta}</p>' if show_meta else ""
+    title_block = f"<h1>{title}</h1>" if title else ""
     html = f"""<!doctype html>
 <html lang="zh">
 <head>
@@ -26,7 +27,7 @@ def render_html(title, meta=None, primary_svg=None, alt_items=None, save_to="cha
 </style>
 </head>
 <body>
-  <h1>{title}</h1>
+  {title_block}
   {meta_block}
   <div class="primary chart">{primary_svg}</div>
   {alts_block}
