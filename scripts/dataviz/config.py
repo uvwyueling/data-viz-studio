@@ -21,7 +21,30 @@ OCCASION_PROFILES = {
 # ── 1.5 标准版样式基线（TODO 里删掉「样式基线」一词后，它在这里落地）────
 # 这是 standard version 的视觉 DNA：一个高亮 + 中性灰，色盲友好、克制中性、沟通优先。
 # 它不是某个场合的风格，而是「还没指定场合时」有意选定的默认。4.1 的场合预设在它之上改写。
-STANDARD_PALETTE = {"highlight": "#2F6690", "muted": "#C9CFD6", "ink": "#1a1a1a", "grid": "#ececec"}
+STANDARD_PALETTE = {"highlight": "#2F6690", "muted": "#C9CFD6", "ink": "#1F2933", "grid": "#E5E7EB"}
+
+
+# ── 1.6 标准版视觉地板：70 分可交付，不直接暴露 matplotlib 默认外观 ────────
+# 这不是作品集/keynote 精修主题，而是所有标准版都必须先达到的中性完成度。
+STANDARD_STYLE = {
+    "figsize": (9.6, 6.0),
+    "kpi_figsize": (7.2, 4.6),
+    "dpi": 140,
+    "font_sizes": {
+        "title": 18,
+        "subtitle": 13,
+        "axis_label": 12,
+        "tick": 10,
+        "annotation": 11,
+        "legend": 10,
+        "facet_title": 11,
+    },
+    "colors": {
+        "background": "#FAFAF7",
+        "axis": "#CBD5E1",
+        "muted_text": "#6B7280",
+    },
+}
 
 
 # ── 2. 受众图型素养 → 图型降级 + 标题写法〔运行时由用户指定〕──────────

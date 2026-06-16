@@ -16,14 +16,17 @@ def render_html(title, meta=None, primary_svg=None, alt_items=None, save_to="cha
 <title>{title}</title>
 <style>
   *{{box-sizing:border-box;}}
-  body{{margin:0 auto;max-width:880px;padding:32px 20px;background:#fff;color:#222;
-       font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;}}
-  h1{{font-size:20px;margin:0 0 4px;}}
-  .meta{{color:#666;font-size:13px;margin:0 0 24px;}}
+  body{{margin:0 auto;max-width:1040px;padding:40px 28px;background:#FAFAF7;color:#1F2933;
+       font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei","Helvetica Neue",sans-serif;
+       line-height:1.5;}}
+  h1{{font-size:22px;line-height:1.35;margin:0 0 6px;font-weight:700;letter-spacing:0;}}
+  .meta{{color:#6B7280;font-size:13px;margin:0 0 24px;}}
+  .chart{{margin-top:10px;}}
   .chart svg{{width:100%;height:auto;display:block;}}
-  .alts{{margin-top:32px;padding-top:8px;border-top:1px solid #e8e8e8;}}
-  .alts>h2{{font-size:13px;color:#666;font-weight:600;letter-spacing:.04em;margin:16px 0 8px;}}
-  .alt h3{{font-size:14px;color:#666;font-weight:500;margin:24px 0 4px;}}
+  .alts{{margin-top:36px;padding-top:12px;border-top:1px solid #E5E7EB;}}
+  .alts>h2{{font-size:13px;color:#6B7280;font-weight:600;letter-spacing:0;margin:16px 0 8px;}}
+  .alt h3{{font-size:14px;color:#6B7280;font-weight:500;margin:24px 0 6px;}}
+  @media (max-width: 640px){{body{{padding:24px 14px;}} h1{{font-size:19px;}}}}
 </style>
 </head>
 <body>

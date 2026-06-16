@@ -197,6 +197,30 @@ def assert_chart_title_wraps_long_insight():
     assert float(view_box.group(1)) < 700
 
 
+def assert_standard_visual_baseline_is_exported():
+    out = ROOT / "__test__" / "standard_visual_baseline.html"
+    df = pd.DataFrame({
+        "分组": ["Adelie", "Adelie", "Gentoo", "Gentoo", "Chinstrap", "Chinstrap"],
+        "体重_g": [3700, 3550, 5000, 5200, 3800, 3900],
+    })
+    tmpl.visualize(
+        df, "分组", "体重_g",
+        question="不同企鹅物种的体重分布有什么差异？",
+        insight="Gentoo 的体重明显更高",
+        audience="low",
+        emphasize="Gentoo",
+        save_to=str(out),
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "background:#FAFAF7" in html
+    svg = re.search(r"(<svg\b.*?</svg>)", html, flags=re.S).group(1)
+    assert "#fafaf7" in svg.lower()
+    view_box = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg)
+    assert view_box is not None
+    assert float(view_box.group(1)) > 560
+    assert float(view_box.group(2)) > 380
+
+
 if __name__ == "__main__":
     assert_floor_contract()
     assert_route_contract()
@@ -204,4 +228,5 @@ if __name__ == "__main__":
     assert_visualize_initializes_cjk_font()
     assert_deck_strips_audience_badges_and_wraps_callout()
     assert_chart_title_wraps_long_insight()
+    assert_standard_visual_baseline_is_exported()
     print("test_routing_and_floor ok")

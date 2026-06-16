@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from .config import _READING_GUIDE
+from .config import STANDARD_STYLE, _READING_GUIDE
 from .fonts import setup_cjk_font
 from .routing import _looks_like_rate
 
@@ -15,7 +15,53 @@ def _despine(ax, palette):
     for s in ["top", "right"]:
         ax.spines[s].set_visible(False)
     for s in ["left", "bottom"]:
-        ax.spines[s].set_color(palette["ink"])
+        ax.spines[s].set_color(STANDARD_STYLE["colors"]["axis"])
+        ax.spines[s].set_linewidth(0.8)
+
+
+def _new_fig_ax(*, kind="standard", ncols=1, nrows=1, sharey=False, squeeze=True, figsize=None):
+    if figsize is None:
+        if kind == "kpi":
+            figsize = STANDARD_STYLE["kpi_figsize"]
+        else:
+            base_w, base_h = STANDARD_STYLE["figsize"]
+            figsize = (base_w * ncols, base_h * nrows)
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=figsize,
+        dpi=STANDARD_STYLE["dpi"],
+        sharey=sharey,
+        squeeze=squeeze,
+    )
+    fig.patch.set_facecolor(STANDARD_STYLE["colors"]["background"])
+    return fig, axes
+
+
+def _apply_standard_axes(ax, palette, *, grid_axis="y"):
+    ax.set_facecolor(STANDARD_STYLE["colors"]["background"])
+    _despine(ax, palette)
+    if grid_axis in ("y", "both"):
+        ax.yaxis.grid(True, color=palette["grid"], linewidth=0.8)
+    if grid_axis in ("x", "both"):
+        ax.xaxis.grid(True, color=palette["grid"], linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.tick_params(colors=palette["ink"], labelsize=STANDARD_STYLE["font_sizes"]["tick"], length=0)
+    ax.xaxis.label.set_size(STANDARD_STYLE["font_sizes"]["axis_label"])
+    ax.yaxis.label.set_size(STANDARD_STYLE["font_sizes"]["axis_label"])
+
+
+def _style_legend(legend, palette):
+    if legend is None:
+        return
+    legend.get_frame().set_facecolor(STANDARD_STYLE["colors"]["background"])
+    legend.get_frame().set_edgecolor("none")
+    for text in legend.get_texts():
+        text.set_color(palette["ink"])
+        text.set_fontsize(STANDARD_STYLE["font_sizes"]["legend"])
+    if legend.get_title() is not None:
+        legend.get_title().set_color(STANDARD_STYLE["colors"]["muted_text"])
+        legend.get_title().set_fontsize(STANDARD_STYLE["font_sizes"]["legend"])
 
 
 def _wrap_text(text, width=34):
@@ -33,7 +79,9 @@ def _wrap_text(text, width=34):
 
 def _title(ax, audience_prof, insight, descriptive, palette):
     text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
-    ax.set_title(_wrap_text(text), color=palette["ink"], fontsize=16, fontweight="bold", loc="left", pad=14)
+    ax.set_title(_wrap_text(text), color=palette["ink"],
+                 fontsize=STANDARD_STYLE["font_sizes"]["title"],
+                 fontweight="bold", loc="left", pad=18)
 
 
 def _annotate(ax, df, group_col, value_col, emphasize, level, palette):
@@ -44,25 +92,27 @@ def _annotate(ax, df, group_col, value_col, emphasize, level, palette):
     gap = means.max() - means.min()
     ax.annotate(f"{emphasize}组平均低约 {gap:.2f}",
                 xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
-                color=palette["highlight"], fontsize=12, fontweight="bold")
+                color=palette["highlight"],
+                fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="bold")
     if level >= 2:  # 叙事档：把每组均值直接标到图上
         for i, (g, m) in enumerate(means.items(), start=1):
             ax.annotate(f"{m:.2f}", xy=(i, m), xytext=(0, 8),
                         textcoords="offset points", ha="center",
-                        color=palette["ink"], fontsize=10)
+                        color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["tick"])
 
 
 def _reading_guide(ax, chart_kind, palette, y=-0.26):
     ax.annotate(_READING_GUIDE[chart_kind],
                 xy=(0.5, y), xycoords="axes fraction", ha="center",
-                color=palette["muted"], fontsize=9, fontweight="normal")
+                color=STANDARD_STYLE["colors"]["muted_text"],
+                fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="normal")
 
 
 def _fig_to_svg(fig):
     """把 matplotlib 图存成可内嵌、可自适应的 SVG 字符串。"""
     setup_cjk_font()
     buf = io.StringIO()
-    fig.savefig(buf, format="svg", bbox_inches="tight")
+    fig.savefig(buf, format="svg", bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     svg = buf.getvalue()
     svg = svg[svg.find("<svg"):]                       # 去掉 XML 声明 / DOCTYPE，便于内嵌
@@ -111,7 +161,7 @@ def _clip_boxplot_view(ax, grouped_values, palette, *, annotate=None):
     if annotate is None:
         ax.annotate(r"$\blacktriangle$ " + note,
                     xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
-                    color=palette["ink"], fontsize=9)
+                    color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["annotation"])
     else:
         annotate(r"$\blacktriangle$ " + note)
     return True
@@ -124,7 +174,7 @@ def box_comparison(df, group_col, value_col, *, insight, descriptive,
     grouped = list(df.groupby(group_col)[value_col])
     labels = [g for g, _ in grouped]
     data = [v.values for _, v in grouped]
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = _new_fig_ax()
     bp = ax.boxplot(data, tick_labels=labels, patch_artist=True, widths=0.5,
                     medianprops=dict(color=palette["ink"], linewidth=2),
                     whiskerprops=dict(color=palette["ink"]),
@@ -135,8 +185,8 @@ def box_comparison(df, group_col, value_col, *, insight, descriptive,
         emph = (emphasize is not None and lab == emphasize)
         patch.set_facecolor(palette["highlight"] if emph else palette["muted"])
         patch.set_edgecolor("none")
-    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
-    ax.set_ylabel(value_col, color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    ax.set_ylabel(value_col, color=palette["ink"])
+    _apply_standard_axes(ax, palette)
     _title(ax, audience_prof, insight, descriptive, palette)
     if level >= 1:
         _reading_guide(ax, "box", palette)
@@ -153,14 +203,15 @@ def bar_means_comparison(df, group_col, value_col, *, insight, descriptive,
     colors = [palette["highlight"] if (emphasize is not None and lab == emphasize)
               else palette["muted"] for lab in labels]
     tops = means + np.nan_to_num(stds)   # 标签锚到误差棒上端之上，避免压住横帽（自检 P1）
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = _new_fig_ax()
     ax.bar(labels, means, width=0.55, color=colors, edgecolor="none",
            yerr=stds, capsize=6, error_kw=dict(ecolor=palette["ink"], lw=1))
     for i, m in enumerate(means):  # 均值直接标出——低画像受众不用读坐标轴
         ax.annotate(f"{m:.2f}", xy=(i, tops[i]), xytext=(0, 6), textcoords="offset points",
-                    ha="center", color=palette["ink"], fontsize=11, fontweight="bold")
-    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
-    ax.set_ylabel(f"{value_col}（均值 $\\pm$ 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+                    ha="center", color=palette["ink"],
+                    fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="bold")
+    ax.set_ylabel(f"{value_col}（均值 $\\pm$ 标准差）", color=palette["ink"])
+    _apply_standard_axes(ax, palette)
     _title(ax, audience_prof, insight, descriptive, palette)
     _annotate(ax, df, group_col, value_col, emphasize, level, palette)
     return _fig_to_svg(fig)
@@ -185,7 +236,8 @@ def _annotate_rate(ax, rates, labels, emphasize, level, palette):
         return
     ax.annotate(f"{emphasize} 比最高组低约 {gap_pp:.0f} 个百分点",
                 xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
-                color=palette["highlight"], fontsize=12, fontweight="bold")
+                color=palette["highlight"],
+                fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="bold")
 
 
 def rate_comparison(df, group_col, value_col, *, insight, descriptive,
@@ -208,18 +260,19 @@ def rate_comparison(df, group_col, value_col, *, insight, descriptive,
         yerr = np.vstack([np.clip(rates - lo, 0, None), np.clip(hi - rates, 0, None)])
         label_y = hi                      # 有误差棒时把标签抬到 CI 上端之上，避开横帽
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = _new_fig_ax()
     ax.bar(labels, rates, width=0.55, color=colors, edgecolor="none",
            yerr=yerr, capsize=6 if show_ci else 0, error_kw=dict(ecolor=palette["ink"], lw=1))
     for i, r in enumerate(rates):  # 直接标百分比——受众不用读坐标轴；锚点避开误差棒
         ax.annotate(f"{r:.0%}", xy=(i, label_y[i]), xytext=(0, 6), textcoords="offset points",
-                    ha="center", color=palette["ink"], fontsize=11, fontweight="bold")
-    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
+                    ha="center", color=palette["ink"],
+                    fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="bold")
+    _apply_standard_axes(ax, palette)
     ax.yaxis.set_major_formatter(PercentFormatter(xmax=1))
     # 默认给足 0~100% 的整轴（比例本就是"占多少"，不截断更诚实）；比例都很小才放大看
     top = 1.0 if rates.max() >= 0.25 else min(1.0, float(rates.max()) * 1.8)
     ax.set_ylim(0, top)
-    ax.set_ylabel(f"{value_col}（占比）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
+    ax.set_ylabel(f"{value_col}（占比）", color=palette["ink"])
     _title(ax, audience_prof, insight, descriptive, palette)
     _annotate_rate(ax, rates, labels, emphasize, level, palette)
     return _fig_to_svg(fig)
@@ -251,7 +304,7 @@ def grouped_box_comparison(df, group_col, value_col, hue_col, *, insight, descri
     n_h = len(hues); width = 0.8 / max(1, n_h)
     all_data = []
 
-    fig, ax = plt.subplots(figsize=(7.5, 5))
+    fig, ax = _new_fig_ax(figsize=(10.2, 6.0))
     for hi, hue in enumerate(hues):
         positions = _grouped_positions(len(groups), hi, n_h, width)
         data = [df[(df[group_col] == g) & (df[hue_col] == hue)][value_col].dropna().values
@@ -267,10 +320,11 @@ def grouped_box_comparison(df, group_col, value_col, hue_col, *, insight, descri
             patch.set_facecolor(colors[hue]); patch.set_edgecolor("none")
 
     ax.set_xticks(range(len(groups))); ax.set_xticklabels(groups)
-    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
-    ax.set_ylabel(value_col, color=palette["ink"]); ax.tick_params(colors=palette["ink"])
-    ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
-              title=hue_col, frameon=False, loc="best")
+    ax.set_ylabel(value_col, color=palette["ink"])
+    _apply_standard_axes(ax, palette)
+    legend = ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
+                       title=hue_col, frameon=False, loc="best")
+    _style_legend(legend, palette)
     _title(ax, audience_prof, insight, descriptive, palette)
     if level >= 1:
         _reading_guide(ax, "grouped_box", palette)
@@ -287,7 +341,7 @@ def grouped_bar_means_comparison(df, group_col, value_col, hue_col, *, insight, 
     colors = _series_colors(palette, hues, emphasize_hue)
     n_h = len(hues); width = 0.8 / max(1, n_h)
 
-    fig, ax = plt.subplots(figsize=(7.5, 5))
+    fig, ax = _new_fig_ax(figsize=(10.2, 6.0))
     for hi, hue in enumerate(hues):
         positions = _grouped_positions(len(groups), hi, n_h, width)
         sub = df[df[hue_col] == hue].groupby(group_col)[value_col]
@@ -300,13 +354,15 @@ def grouped_bar_means_comparison(df, group_col, value_col, hue_col, *, insight, 
                 if mv == mv:  # 跳过 NaN
                     top = mv + (sv if sv == sv else 0)
                     ax.annotate(f"{mv:.0f}", xy=(x, top), xytext=(0, 4), textcoords="offset points",
-                                ha="center", color=palette["ink"], fontsize=9, fontweight="bold")
+                                ha="center", color=palette["ink"],
+                                fontsize=STANDARD_STYLE["font_sizes"]["tick"], fontweight="bold")
 
     ax.set_xticks(range(len(groups))); ax.set_xticklabels(groups)
-    _despine(ax, palette); ax.yaxis.grid(True, color=palette["grid"]); ax.set_axisbelow(True)
-    ax.set_ylabel(f"{value_col}（均值 $\\pm$ 标准差）", color=palette["ink"]); ax.tick_params(colors=palette["ink"])
-    ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
-              title=hue_col, frameon=False, loc="best")
+    ax.set_ylabel(f"{value_col}（均值 $\\pm$ 标准差）", color=palette["ink"])
+    _apply_standard_axes(ax, palette)
+    legend = ax.legend(handles=[Patch(facecolor=colors[h], label=str(h)) for h in hues],
+                       title=hue_col, frameon=False, loc="best")
+    _style_legend(legend, palette)
     _title(ax, audience_prof, insight, descriptive, palette)
     return _fig_to_svg(fig)
 
@@ -319,7 +375,7 @@ def histogram_distribution(df, value_col, *, insight, descriptive,
     """单变量分布直方图。hue_col 给了则叠加多组分布（半透明，便于比较形状）。
     适合 mid/high 受众；low 受众由路由改走 kpi_number。
     level >= 1 时在均值处画一条虚线参考线，帮助读者定位中心。"""
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = _new_fig_ax()
 
     if hue_col is not None:
         hues = sorted(df[hue_col].dropna().unique())
@@ -328,7 +384,8 @@ def histogram_distribution(df, value_col, *, insight, descriptive,
             vals = df[df[hue_col] == hue][value_col].dropna()
             ax.hist(vals, bins=bins, color=colors[hue],
                     edgecolor="none", alpha=0.72, label=str(hue))
-        ax.legend(title=hue_col, frameon=False, loc="upper right")
+        legend = ax.legend(title=hue_col, frameon=False, loc="upper right")
+        _style_legend(legend, palette)
     else:
         ax.hist(df[value_col].dropna(), bins=bins,
                 color=palette["highlight"], edgecolor="none", alpha=0.85)
@@ -341,14 +398,12 @@ def histogram_distribution(df, value_col, *, insight, descriptive,
         ax.annotate(f"均值 {mean_val:.1f}",
                     xy=(mean_val, ylim[1] * 0.88),
                     xytext=(6, 0), textcoords="offset points",
-                    color=palette["ink"], fontsize=10, fontweight="bold")
+                    color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+                    fontweight="bold")
 
-    _despine(ax, palette)
-    ax.yaxis.grid(True, color=palette["grid"])
-    ax.set_axisbelow(True)
     ax.set_xlabel(value_col, color=palette["ink"])
     ax.set_ylabel("频次", color=palette["ink"])
-    ax.tick_params(colors=palette["ink"])
+    _apply_standard_axes(ax, palette)
     _title(ax, audience_prof, insight, descriptive, palette)
     return _fig_to_svg(fig)
 
@@ -358,7 +413,7 @@ def line_trend(df, group_col, value_col, *, insight, descriptive,
     """折线趋势图：x 轴为时间或有序序列，y 轴为各期均值。
     hue_col 给了则画多条线（一条线 = 一个子总体）。
     level >= 1 时在每个数据点标出数值，帮助低受众不必读坐标轴。"""
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = _new_fig_ax(figsize=(10.2, 6.0))
 
     if hue_col is not None:
         hues = sorted(df[hue_col].dropna().unique())
@@ -374,8 +429,10 @@ def line_trend(df, group_col, value_col, *, insight, descriptive,
                 for x, y in zip(xs, ys):
                     ax.annotate(f"{y:.1f}", xy=(x, y), xytext=(0, 8),
                                 textcoords="offset points", ha="center",
-                                color=colors[hue], fontsize=9, fontweight="bold")
-        ax.legend(title=hue_col, frameon=False, loc="best")
+                                color=colors[hue], fontsize=STANDARD_STYLE["font_sizes"]["tick"],
+                                fontweight="bold")
+        legend = ax.legend(title=hue_col, frameon=False, loc="best")
+        _style_legend(legend, palette)
     else:
         agg = df.groupby(group_col)[value_col].mean()
         xs, ys = list(agg.index), agg.values
@@ -386,16 +443,14 @@ def line_trend(df, group_col, value_col, *, insight, descriptive,
             for x, y in zip(xs, ys):
                 ax.annotate(f"{y:.1f}", xy=(x, y), xytext=(0, 8),
                             textcoords="offset points", ha="center",
-                            color=palette["ink"], fontsize=11, fontweight="bold")
+                            color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+                            fontweight="bold")
 
     if len(all_xs) > 6:
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-    _despine(ax, palette)
-    ax.yaxis.grid(True, color=palette["grid"])
-    ax.set_axisbelow(True)
     ax.set_xlabel(group_col, color=palette["ink"])
     ax.set_ylabel(value_col, color=palette["ink"])
-    ax.tick_params(colors=palette["ink"])
+    _apply_standard_axes(ax, palette)
     _title(ax, audience_prof, insight, descriptive, palette)
     return _fig_to_svg(fig)
 
@@ -423,21 +478,24 @@ def kpi_number(df, value_col, *, insight, descriptive,
         val_fmt = f"{val:.2f}"
         unit_label = "（均值）"
 
-    fig, ax = plt.subplots(figsize=(5, 4))
+    fig, ax = _new_fig_ax(kind="kpi")
     ax.axis("off")
     # 大数字
     ax.text(0.5, 0.60, val_fmt, transform=ax.transAxes,
-            ha="center", va="center", fontsize=72, fontweight="900",
+            ha="center", va="center", fontsize=68, fontweight="900",
             color=palette["highlight"])
     # 指标标签
     ax.text(0.5, 0.28, f"{value_col}{unit_label}", transform=ax.transAxes,
-            ha="center", va="center", fontsize=15, color=palette["ink"])
+            ha="center", va="center", fontsize=STANDARD_STYLE["font_sizes"]["subtitle"],
+            color=palette["ink"])
     # 样本量
     ax.text(0.5, 0.12, f"n = {n:,}", transform=ax.transAxes,
-            ha="center", va="center", fontsize=11, color=palette["muted"])
+            ha="center", va="center", fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+            color=STANDARD_STYLE["colors"]["muted_text"])
     # 一句结论（level >= 1 = 低受众必有）
     if level >= 1 and insight:
-        fig.text(0.5, 0.02, _wrap_text(insight, width=38), ha="center", fontsize=10,
+        fig.text(0.5, 0.02, _wrap_text(insight, width=42), ha="center",
+                 fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
                  color=palette["ink"], fontweight="bold")
 
     return _fig_to_svg(fig)
@@ -453,8 +511,8 @@ def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descri
     n_f = len(facets)
     ncols = min(3, n_f)
     nrows = (n_f + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.8 * nrows),
-                             sharey=True, squeeze=False)
+    fig, axes = _new_fig_ax(nrows=nrows, ncols=ncols, figsize=(4.8 * ncols, 4.0 * nrows),
+                            sharey=True, squeeze=False)
     axes_flat = axes.flatten()
     all_grouped = []
 
@@ -474,24 +532,26 @@ def facet_box_comparison(df, group_col, value_col, facet_col, *, insight, descri
             emph = (emphasize is not None and lab == emphasize)
             patch.set_facecolor(palette["highlight"] if emph else palette["muted"])
             patch.set_edgecolor("none")
-        ax.set_title(f"{facet_col} = {facet}", fontsize=11, color=palette["ink"], pad=6)
-        _despine(ax, palette)
-        ax.yaxis.grid(True, color=palette["grid"])
-        ax.set_axisbelow(True)
+        ax.set_title(f"{facet_col} = {facet}", fontsize=STANDARD_STYLE["font_sizes"]["facet_title"],
+                     color=palette["ink"], pad=8)
         ax.set_ylabel(value_col if i % ncols == 0 else "", color=palette["ink"])
-        ax.tick_params(colors=palette["ink"])
+        _apply_standard_axes(ax, palette)
 
     for j in range(i + 1, len(axes_flat)):
         axes_flat[j].set_visible(False)
 
     title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
-    fig.suptitle(_wrap_text(title_text, width=44), color=palette["ink"], fontsize=14, fontweight="bold")
+    fig.suptitle(_wrap_text(title_text, width=54), color=palette["ink"],
+                 fontsize=STANDARD_STYLE["font_sizes"]["title"], fontweight="bold")
     if level >= 1:
-        fig.text(0.5, 0.01, _READING_GUIDE["facet_box"], ha="center", fontsize=9,
-                 color=palette["muted"], fontweight="normal")
+        fig.text(0.5, 0.01, _READING_GUIDE["facet_box"], ha="center",
+                 fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+                 color=STANDARD_STYLE["colors"]["muted_text"], fontweight="normal")
     _clip_boxplot_view(
         axes_flat[0], all_grouped, palette,
-        annotate=lambda note: fig.text(0.5, -0.025, note, ha="center", fontsize=9, color=palette["ink"]),
+        annotate=lambda note: fig.text(0.5, -0.025, note, ha="center",
+                                       fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+                                       color=palette["ink"]),
     )
     fig.tight_layout()
     return _fig_to_svg(fig)
@@ -504,8 +564,8 @@ def facet_bar_means_comparison(df, group_col, value_col, facet_col, *, insight, 
     n_f = len(facets)
     ncols = min(3, n_f)
     nrows = (n_f + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.8 * nrows),
-                             sharey=True, squeeze=False)
+    fig, axes = _new_fig_ax(nrows=nrows, ncols=ncols, figsize=(4.8 * ncols, 4.0 * nrows),
+                            sharey=True, squeeze=False)
     axes_flat = axes.flatten()
 
     for i, facet in enumerate(facets):
@@ -522,21 +582,22 @@ def facet_bar_means_comparison(df, group_col, value_col, facet_col, *, insight, 
         for xi, mv, top in zip(range(len(labels)), means, tops):
             ax.annotate(f"{mv:.1f}", xy=(xi, top), xytext=(0, 5),
                         textcoords="offset points", ha="center",
-                        color=palette["ink"], fontsize=9, fontweight="bold")
-        ax.set_title(f"{facet_col} = {facet}", fontsize=11, color=palette["ink"], pad=6)
-        _despine(ax, palette)
-        ax.yaxis.grid(True, color=palette["grid"])
-        ax.set_axisbelow(True)
+                        color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["tick"],
+                        fontweight="bold")
+        ax.set_title(f"{facet_col} = {facet}", fontsize=STANDARD_STYLE["font_sizes"]["facet_title"],
+                     color=palette["ink"], pad=8)
         ax.set_ylabel(value_col if i % ncols == 0 else "", color=palette["ink"])
-        ax.tick_params(colors=palette["ink"])
+        _apply_standard_axes(ax, palette)
 
     for j in range(i + 1, len(axes_flat)):
         axes_flat[j].set_visible(False)
 
     title_text = descriptive if audience_prof["title_mode"] == "descriptive" else insight
-    fig.suptitle(_wrap_text(title_text, width=44), color=palette["ink"], fontsize=14, fontweight="bold")
+    fig.suptitle(_wrap_text(title_text, width=54), color=palette["ink"],
+                 fontsize=STANDARD_STYLE["font_sizes"]["title"], fontweight="bold")
     if level >= 1:
-        fig.text(0.5, 0.01, _wrap_text(insight, width=44), ha="center", fontsize=11,
+        fig.text(0.5, 0.01, _wrap_text(insight, width=54), ha="center",
+                 fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
                  color=palette["highlight"], fontweight="bold")
     fig.tight_layout()
     return _fig_to_svg(fig)
@@ -560,7 +621,8 @@ def _draw_regression(ax, x, y, color, level, row_offset=0):
         direction = "正相关" if m > 0 else "负相关"
         ax.annotate(f"{direction}，$R^2$={r2:.2f}",
                     xy=(0.04, 0.93 - row_offset * 0.09), xycoords="axes fraction",
-                    color=color, fontsize=10, fontweight="bold")
+                    color=color, fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+                    fontweight="bold")
 
 
 def scatter_regression(df, x_col, y_col, *, insight, descriptive,
@@ -568,7 +630,7 @@ def scatter_regression(df, x_col, y_col, *, insight, descriptive,
     """散点图 + 线性回归线：探索两个连续变量的关系。
     hue_col 给了则分颜色显示各子总体并分别画回归线。
     调用方式：visualize(df, x_col, y_col, chart_kind='scatter', ...)。"""
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = _new_fig_ax()
 
     if hue_col is not None:
         hues = sorted(df[hue_col].dropna().unique())
@@ -578,20 +640,17 @@ def scatter_regression(df, x_col, y_col, *, insight, descriptive,
             ax.scatter(sub[x_col], sub[y_col], c=colors[hue],
                        alpha=0.55, s=28, edgecolors="none", label=str(hue))
             _draw_regression(ax, sub[x_col], sub[y_col], colors[hue], level, offset)
-        ax.legend(title=hue_col, frameon=False)
+        legend = ax.legend(title=hue_col, frameon=False)
+        _style_legend(legend, palette)
     else:
         clean = df[[x_col, y_col]].dropna()
         ax.scatter(clean[x_col], clean[y_col], c=palette["highlight"],
                    alpha=0.55, s=28, edgecolors="none")
         _draw_regression(ax, clean[x_col], clean[y_col], palette["highlight"], level)
 
-    _despine(ax, palette)
-    ax.yaxis.grid(True, color=palette["grid"])
-    ax.xaxis.grid(True, color=palette["grid"])
-    ax.set_axisbelow(True)
     ax.set_xlabel(x_col, color=palette["ink"])
     ax.set_ylabel(y_col, color=palette["ink"])
-    ax.tick_params(colors=palette["ink"])
+    _apply_standard_axes(ax, palette, grid_axis="both")
     _title(ax, audience_prof, insight, descriptive, palette)
     return _fig_to_svg(fig)
 
@@ -603,7 +662,7 @@ def heatmap_comparison(df, row_col, col_col, value_col, *, insight, descriptive,
     from matplotlib.colors import LinearSegmentedColormap
     pivot = df.groupby([row_col, col_col])[value_col].mean().unstack(col_col)
     n_rows, n_cols = pivot.shape
-    fig, ax = plt.subplots(figsize=(max(5, n_cols * 1.5), max(4, n_rows * 0.9)))
+    fig, ax = _new_fig_ax(figsize=(max(6.4, n_cols * 1.7), max(4.8, n_rows * 0.95)))
 
     cmap = LinearSegmentedColormap.from_list("em", ["#f0f4f8", palette["highlight"]])
     im = ax.imshow(pivot.values, cmap=cmap, aspect="auto")
@@ -613,7 +672,7 @@ def heatmap_comparison(df, row_col, col_col, value_col, *, insight, descriptive,
     ax.set_yticks(range(n_rows)); ax.set_yticklabels(pivot.index, color=palette["ink"])
     ax.set_xlabel(col_col, color=palette["ink"])
     ax.set_ylabel(row_col, color=palette["ink"])
-    ax.tick_params(colors=palette["ink"])
+    _apply_standard_axes(ax, palette, grid_axis=None)
 
     vmax = np.nanmax(pivot.values)
     for i in range(n_rows):
@@ -622,11 +681,13 @@ def heatmap_comparison(df, row_col, col_col, value_col, *, insight, descriptive,
             if not pd.isna(val):
                 text_color = "white" if (vmax > 0 and val / vmax > 0.55) else palette["ink"]
                 ax.text(j, i, f"{val:.1f}", ha="center", va="center",
-                        color=text_color, fontsize=10, fontweight="bold")
+                        color=text_color, fontsize=STANDARD_STYLE["font_sizes"]["annotation"],
+                        fontweight="bold")
 
     cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
-    cbar.ax.tick_params(colors=palette["ink"], labelsize=9)
-    cbar.set_label(value_col, color=palette["ink"], fontsize=10)
+    cbar.ax.tick_params(colors=palette["ink"], labelsize=STANDARD_STYLE["font_sizes"]["tick"], length=0)
+    cbar.outline.set_edgecolor(STANDARD_STYLE["colors"]["axis"])
+    cbar.set_label(value_col, color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["axis_label"])
 
     _title(ax, audience_prof, insight, descriptive, palette)
     if level >= 1:
