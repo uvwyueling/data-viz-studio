@@ -5,7 +5,7 @@ from .routing import _route, _annotation_floor, _resolve_level, _check_cardinali
 from .charts import (
     box_comparison, bar_means_comparison, rate_comparison, grouped_box_comparison, grouped_bar_means_comparison,
     histogram_distribution, line_trend, kpi_number, facet_box_comparison, facet_bar_means_comparison,
-    scatter_regression, heatmap_comparison,
+    scatter_regression, heatmap_comparison, _emphasis_gap_label,
 )
 from .render import render_html
 from .visualize import visualize
@@ -17,4 +17,5 @@ __all__ = [
     "box_comparison", "bar_means_comparison", "rate_comparison", "grouped_box_comparison",
     "grouped_bar_means_comparison", "histogram_distribution", "line_trend", "kpi_number",
     "facet_box_comparison", "facet_bar_means_comparison", "scatter_regression", "heatmap_comparison",
+    "_emphasis_gap_label",
 ]

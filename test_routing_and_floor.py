@@ -221,6 +221,18 @@ def assert_standard_visual_baseline_is_exported():
     assert float(view_box.group(2)) > 380
 
 
+def assert_emphasis_gap_label_uses_emphasized_group_direction():
+    means = pd.Series({
+        "Adelie": 3700.4,
+        "Gentoo": 5076.2,
+        "Chinstrap": 3733.1,
+    })
+    assert tmpl._emphasis_gap_label(means, "Gentoo") == "Gentoo组平均高约 1376"
+    assert tmpl._emphasis_gap_label(means, "Adelie") == "Adelie组平均低约 1376"
+    assert tmpl._emphasis_gap_label(means, "Missing") is None
+    assert tmpl._emphasis_gap_label(pd.Series({"Gentoo": 5076.2}), "Gentoo") is None
+
+
 if __name__ == "__main__":
     assert_floor_contract()
     assert_route_contract()
@@ -229,4 +241,5 @@ if __name__ == "__main__":
     assert_deck_strips_audience_badges_and_wraps_callout()
     assert_chart_title_wraps_long_insight()
     assert_standard_visual_baseline_is_exported()
+    assert_emphasis_gap_label_uses_emphasized_group_direction()
     print("test_routing_and_floor ok")

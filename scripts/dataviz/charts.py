@@ -88,17 +88,30 @@ def _annotate(ax, df, group_col, value_col, emphasize, level, palette):
     """按组合后的注释档位往图上加解释。level: 0/1/2。"""
     if level <= 0 or emphasize is None:
         return
-    means = df.groupby(group_col)[value_col].mean()
-    gap = means.max() - means.min()
-    ax.annotate(f"{emphasize}组平均低约 {gap:.2f}",
-                xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
-                color=palette["highlight"],
-                fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="bold")
+    means = df.groupby(group_col)[value_col].mean().dropna()
+    label = _emphasis_gap_label(means, emphasize)
+    if label is not None:
+        ax.annotate(label,
+                    xy=(0.5, -0.16), xycoords="axes fraction", ha="center",
+                    color=palette["highlight"],
+                    fontsize=STANDARD_STYLE["font_sizes"]["annotation"], fontweight="bold")
     if level >= 2:  # 叙事档：把每组均值直接标到图上
         for i, (g, m) in enumerate(means.items(), start=1):
             ax.annotate(f"{m:.2f}", xy=(i, m), xytext=(0, 8),
                         textcoords="offset points", ha="center",
                         color=palette["ink"], fontsize=STANDARD_STYLE["font_sizes"]["tick"])
+
+
+def _emphasis_gap_label(means, emphasize):
+    if emphasize not in means.index or len(means) < 2:
+        return None
+    emph_mean = means[emphasize]
+    others = means.drop(emphasize)
+    if emph_mean >= others.max():
+        gap, direction = emph_mean - others.min(), "高"
+    else:
+        gap, direction = others.max() - emph_mean, "低"
+    return f"{emphasize}组平均{direction}约 {gap:.0f}"
 
 
 def _reading_guide(ax, chart_kind, palette, y=-0.26):

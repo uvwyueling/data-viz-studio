@@ -13,18 +13,23 @@ import sys
 sys.path.insert(0, "scripts")
 import dataviz as dv
 
-df = dv.load_dataframe("titanic.csv")
-df["survived_01"] = dv.encode_binary(df, "survived", pos_value="yes")
+df = dv.load_dataframe("penguins.csv")
+df = df.dropna(subset=["species", "body_mass_g"]).copy()
+df["species_cn"] = df["species"].map({
+    "Gentoo": "巴布亚(Gentoo)",
+    "Chinstrap": "帽带",
+    "Adelie": "阿德利",
+}).fillna(df["species"])
 
 dv.visualize(
     df,
-    group_col="class",
-    value_col="survived_01",
-    question="不同舱位乘客的生还率差异有多大？",
-    insight="头等舱生还率明显高于三等舱，舱位等级是生还差异的重要因素",
+    group_col="species_cn",
+    value_col="body_mass_g",
+    question="不同种类的企鹅，体重差多少？",
+    insight="巴布亚企鹅明显是一个量级，平均约5076克；阿德利和帽带几乎一样重，都在3700克左右。",
     audience="low",
-    emphasize="1st",
-    save_to="titanic_survival.html",
+    emphasize="巴布亚(Gentoo)",
+    save_to="penguin_body_mass.html",
 )
 ```
 
@@ -58,7 +63,7 @@ dv.visualize(
 | 进阶型统计素养人群（`mid`） | 能理解直方图；箱线图需要辅助解读 | 保留信息量更高的图型，但补阅读指引 | 主标题 + 轴标签；临界图型补一句解读 |
 | 高阶型统计素养人群（`high`） | 可直接读懂箱线图 | 使用完整图型，如箱线、散点回归、热力图 | 主标题 + 轴标签 |
 
-同一数据、同一问题，面对不同受众会得到不同表达。下图使用专业分流数据作为呈现示例；上方 Quick Start 的 Titanic 只是更通用的代码示例。
+同一数据、同一问题，面对不同受众会得到不同表达。下图和上方 Quick Start 使用同一份 Palmer Penguins 数据作为呈现示例。
 
 ![同一数据集面向基础型、进阶型、高阶型受众的三种呈现](assets/readme/same-data-three-audiences.png)
 
@@ -86,17 +91,17 @@ deck 是可选的 16:9 演示版式：KPI 卡、核心发现 callout、图表、
 from scripts.deck import render_deck
 
 render_deck(
-    title="舱位等级与生还率：差距有多大？",
-    subtitle="Titanic passenger data",
+    title="三种企鹅，体重一重两轻",
+    subtitle="各种类平均体重对比 · 面向非统计背景受众",
     kpi_cards=[
-        {"label": "1等舱生还率", "value": "62%"},
-        {"label": "2等舱生还率", "value": "43%"},
-        {"label": "3等舱生还率", "value": "26%"},
+        {"label": "巴布亚 平均体重", "value": "5076 克"},
+        {"label": "阿德利 / 帽带 约", "value": "3700 克"},
+        {"label": "最重比最轻多 · 37%", "value": "1.4 公斤"},
     ],
-    callout="头等舱乘客生还率明显高于三等舱，舱位等级是生还差异的重要因素",
+    callout="巴布亚（Gentoo）企鹅明显更重，是另一个量级；阿德利和帽带几乎一样重。",
     chart_svg=chart_svg,
     palette=dv.STANDARD_PALETTE,
-    save_to="titanic_deck.html",
+    save_to="penguin_body_mass_deck.html",
 )
 ```
 
