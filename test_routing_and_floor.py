@@ -25,6 +25,8 @@ def assert_floor_contract():
     for kind in kinds:
         assert tmpl._annotation_floor("high", kind) == 0, kind
         assert tmpl._annotation_floor("low", kind) == 1, kind
+        assert tmpl._annotation_floor("unknown", kind) == 1, kind
+        assert tmpl._annotation_floor("unclear", kind) == 1, kind
 
     for kind in ["box", "grouped_box", "facet_box", "scatter", "heatmap"]:
         assert tmpl._annotation_floor("mid", kind) == 1, kind
@@ -33,19 +35,20 @@ def assert_floor_contract():
 
 
 def route(df, group_col, value_col, audience, hue_col=None, facet_col=None):
-    aud = tmpl.AUDIENCE_PROFILES[audience]
+    aud = tmpl.AUDIENCE_PROFILES[tmpl.normalize_audience_key(audience)]
     return tmpl._route(df, group_col, value_col, aud, hue_col, facet_col)
 
 
 def resolve_visualize_chart_kind(df, group_col, value_col, audience, *, chart_kind=None, hue_col=None, facet_col=None):
-    aud = tmpl.AUDIENCE_PROFILES[audience]
+    audience_key = tmpl.normalize_audience_key(audience)
+    aud = tmpl.AUDIENCE_PROFILES[audience_key]
     kind = chart_kind or tmpl._route(df, group_col, value_col, aud, hue_col, facet_col)
-    if audience == "low" and kind == "scatter":
+    if audience_key == "low" and kind == "scatter":
         raise ValueError(
             "散点图表达两个连续变量的关系，低受众读不了；自动分箱会把『关系』静默换成『均值』(违反 P0 口径)。"
             "请改用 mid/high 受众，或换一个适合低受众的问题。"
         )
-    if audience == "low" and kind == "heatmap":
+    if audience_key == "low" and kind == "heatmap":
         kind = "grouped_bar_means"
     return kind
 
@@ -63,32 +66,40 @@ def assert_route_contract():
     assert route(df, "group", "value", "high") == "box"
     assert route(df, "group", "value", "mid") == "box"
     assert route(df, "group", "value", "low") == "bar_means"
+    assert route(df, "group", "value", "unknown") == "bar_means"
+    assert tmpl.normalize_audience_key("unknown") == "low"
+    assert tmpl.normalize_audience_key("unsure") == "low"
 
     for audience in ["high", "mid", "low"]:
         assert route(df, "date", "value", audience) == "line"
         assert route(df, "group", "flag", audience) == "rate"
+    assert route(df, "date", "value", "unknown") == "line"
+    assert route(df, "group", "flag", "unknown") == "rate"
 
     assert route(df, "group", "value", "high", hue_col="hue") == "grouped_box"
     assert route(df, "group", "value", "mid", hue_col="hue") == "grouped_box"
     assert route(df, "group", "value", "low", hue_col="hue") == "grouped_bar_means"
+    assert route(df, "group", "value", "unknown", hue_col="hue") == "grouped_bar_means"
 
     assert route(df, "group", "value", "high", facet_col="facet") == "facet_box"
     assert route(df, "group", "value", "mid", facet_col="facet") == "facet_box"
     assert route(df, "group", "value", "low", facet_col="facet") == "facet_bar_means"
+    assert route(df, "group", "value", "unknown", facet_col="facet") == "facet_bar_means"
 
     assert route(df, None, "value", "high") == "histogram"
     assert route(df, None, "value", "mid") == "histogram"
     assert route(df, None, "value", "low") == "kpi"
+    assert route(df, None, "value", "unknown") == "kpi"
 
     assert resolve_visualize_chart_kind(
         df, "group", "value", "low", chart_kind="heatmap", hue_col="hue"
     ) == "grouped_bar_means"
     try:
-        resolve_visualize_chart_kind(df, "value", "flag", "low", chart_kind="scatter")
+        resolve_visualize_chart_kind(df, "value", "flag", "unknown", chart_kind="scatter")
     except ValueError as e:
         assert "散点图表达两个连续变量的关系，低受众读不了" in str(e)
     else:
-        raise AssertionError("low + scatter did not raise")
+        raise AssertionError("unknown + scatter did not raise")
 
 
 def assert_integrated_floor_for_reachable_routes():

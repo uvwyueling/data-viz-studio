@@ -1,4 +1,4 @@
-from .config import AUDIENCE_PROFILES, OCCASION_PROFILES, STANDARD_PALETTE
+from .config import AUDIENCE_PROFILES, OCCASION_PROFILES, STANDARD_PALETTE, normalize_audience_key
 from .routing import _route, _resolve_level, _check_cardinality
 from .charts import (
     box_comparison, bar_means_comparison, grouped_box_comparison, grouped_bar_means_comparison,
@@ -28,20 +28,21 @@ def visualize(df, group_col=None, value_col=None, *, question, insight,
     occasion=None → 标准版（STANDARD_PALETTE + 受众注释地板），第 3 步默认走这条。
     occasion="keynote"/"internal"/"portfolio" → 4.1 精修：换场合配色、把注释往地板之上叠。
     """
-    aud = AUDIENCE_PROFILES[audience]
+    audience_key = normalize_audience_key(audience)
+    aud = AUDIENCE_PROFILES[audience_key]
     occ = OCCASION_PROFILES[occasion] if occasion is not None else None    # 标准版不预设场合
     palette = occ["palette"] if occ is not None else STANDARD_PALETTE
 
     _check_cardinality(df, group_col, hue_col, facet_col)                  # 类别过多提前提示
     chart_kind = chart_kind or _route(df, group_col, value_col, aud, hue_col, facet_col)
-    if audience == "low" and chart_kind == "scatter":
+    if audience_key == "low" and chart_kind == "scatter":
         raise ValueError(
             "散点图表达两个连续变量的关系，低受众读不了；自动分箱会把『关系』静默换成『均值』(违反 P0 口径)。"
             "请改用 mid/high 受众，或换一个适合低受众的问题。"
         )
-    if audience == "low" and chart_kind == "heatmap":
+    if audience_key == "low" and chart_kind == "heatmap":
         chart_kind = "grouped_bar_means"
-    level = _resolve_level(audience, chart_kind, occ)                      # 受众地板 +（场合叠加）
+    level = _resolve_level(audience_key, chart_kind, occ)                  # 受众地板 +（场合叠加）
     if group_col is None:
         descriptive = f"{value_col} 的分布"
     elif facet_col:

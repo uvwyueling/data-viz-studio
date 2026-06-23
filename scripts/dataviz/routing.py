@@ -1,16 +1,18 @@
 import pandas as pd
 
-from .config import _BORDERLINE_FOR_MID, ANNOTATE_MAX
+from .config import _BORDERLINE_FOR_MID, ANNOTATE_MAX, normalize_audience_key
 
 
 def _annotation_floor(audience, chart_kind):
     """受众注释地板（固有属性，单一真源）。返回 level：
        0=仅标题+轴；1=加一句解读/结论；2=叙事式多标注。
     - low：地板=1 —— 必含直接标注(柱顶数值，图型函数无条件给)+一句结论；这是低受众读懂图的结构，不是装饰。
+    - unknown：先归一化为 low；用于公共演讲等无法判断受众统计素养的场景。
     - mid + 临界图型（箱线类 / 高受众图型）：地板=1 —— 补一句翻译解读。
     - mid + 普通图型 / high：地板=0 —— 裸图可读。
     场合（4.1）只能在此地板之上叠加（见 _resolve_level），绝不减到地板以下。
     """
+    audience = normalize_audience_key(audience)
     if audience == "low":
         return 1
     if audience == "mid" and chart_kind in _BORDERLINE_FOR_MID:
@@ -39,6 +41,7 @@ def _route(df, group_col, value_col, aud, hue_col, facet_col=None):
 
 def _resolve_level(audience, chart_kind, occ):
     """最终注释档 = 受众地板；场合（4.1）只能往上叠，不能压到地板以下。"""
+    audience = normalize_audience_key(audience)
     level = _annotation_floor(audience, chart_kind)
     if occ is not None:
         level = max(level, occ["annotate_base"])
@@ -87,4 +90,3 @@ def _looks_like_trend(s):
     """group_col 是否为时序（datetime dtype）？是则路由到折线趋势图。
     整数年份（如 2020/2021）不自动判定，需手传 chart_kind='line' 明确指定。"""
     return pd.api.types.is_datetime64_any_dtype(s)
-

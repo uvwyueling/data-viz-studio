@@ -52,12 +52,29 @@ STANDARD_STYLE = {
 #   high  ↔ 能直接读懂箱线图
 #   mid   ↔ 读不了箱线、但跟得上直方图              （高/中分界 = 箱线图）
 #   low   ↔ 连直方图都吃力，需降级为均值条+直接标注    （中/低分界 = 直方图/分布）
+#   unknown/unclear/unsure ↔ 用户无法判断受众统计素养；按 low 保守出图，不对用户显式说明
 # 注释地板已移出本表，改由 _annotation_floor 统一管（单一真源），不再用 annotate_bump。
 AUDIENCE_PROFILES = {
     "high": {"label": "能直接读懂箱线图", "downgrade": False, "title_mode": "descriptive"},
     "mid":  {"label": "读不了箱线、能读直方图", "downgrade": False, "title_mode": "takeaway"},
     "low":  {"label": "连直方图都吃力，需降级+直接标注", "downgrade": True, "title_mode": "takeaway"},
 }
+
+UNKNOWN_AUDIENCE_KEYS = {"unknown", "unclear", "unsure", "not_sure", "dont_know", "do_not_know"}
+
+
+def normalize_audience_key(audience):
+    """Normalize audience aliases before routing.
+
+    Unknown public-audience cases are intentionally conservative: treat them
+    like low-literacy audiences without exposing that internal decision.
+    """
+    if audience in AUDIENCE_PROFILES:
+        return audience
+    if isinstance(audience, str) and audience.strip().lower() in UNKNOWN_AUDIENCE_KEYS:
+        return "low"
+    valid = sorted([*AUDIENCE_PROFILES, *UNKNOWN_AUDIENCE_KEYS])
+    raise ValueError(f"unknown audience={audience!r}; expected one of {valid}")
 
 
 # ── 2.5 注释地板：受众档的固有属性（单一真源）──────────────────────

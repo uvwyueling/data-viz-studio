@@ -12,7 +12,7 @@ df["col_01"] = dv.encode_binary(df, "col", pos_value="yes")
 
 dv.visualize(df, group_col, value_col,
     question=..., insight=<第 2 步 EDA 得到的洞察>,
-    audience=<high/mid/low>,
+    audience=<high/mid/low/unknown>,
     emphasize=<要强调的组>,
     hue_col=<可选：要对比的子总体列；给了就出"分组对比图">,
     emphasize_hue=<可选：高亮哪个子总体>,
@@ -20,7 +20,9 @@ dv.visualize(df, group_col, value_col,
     chart_kind=<可选：手动覆盖路由，如 "line" 用于整数年份等无法自动判断的有序 x>,
     save_to="output.html")
 
-# 单变量模式：group_col 不传（或传 None）→ 直方图（进阶型 / 高阶型统计素养人群）/ 大数字 KPI（基础型统计素养人群）
+# audience="unknown" 表示用户无法判断受众统计素养；内部按 low 保守出图，不在成品里显式说明。
+
+# 单变量模式：group_col 不传（或传 None）→ 直方图（进阶型 / 高阶型统计素养人群）/ 大数字 KPI（基础型统计素养人群或 unknown）
 dv.visualize(df, value_col="age", question=..., insight=..., audience=..., save_to=...)
 
 # 散点 + 回归：group_col 传 x_col，value_col 传 y_col；可选 hue_col 分系列
@@ -37,11 +39,12 @@ dv.visualize(..., occasion="keynote"/"internal"/"portfolio", ...)
 
 ## 路由规则
 
-`_route` 是自动选型单一真源；`chart_kind` 可覆盖。基础型统计素养人群的 scatter / heatmap 覆盖规则在 `visualize()` 解析覆盖处集中执行。
+`_route` 是自动选型单一真源；`chart_kind` 可覆盖。`unknown` 在进入路由前由 `normalize_audience_key(...)` 归一化为 `low`。基础型统计素养人群的 scatter / heatmap 覆盖规则在 `visualize()` 解析覆盖处集中执行。
 
 | 条件（按优先级） | 路由结果 |
 |--|--|
 | `group_col=None` + 基础型统计素养人群（`low`） | `kpi` |
+| `group_col=None` + 未知受众（`unknown`） | `kpi` |
 | `group_col=None` + 进阶型 / 高阶型统计素养人群（`mid` / `high`） | `histogram` |
 | `facet_col` 非空 | `facet_box`（`low` → `facet_bar_means`） |
 | `hue_col` 非空 | `grouped_box`（`low` → `grouped_bar_means`） |
